@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ローカルAI 英会話チャット (Llama 3.2 1B)</title>
+    <title>ローカルAI 英会話チャット (Qwen 0.5B + RAG)</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -19,11 +19,7 @@
             align-items: center;
             margin-bottom: 12px;
         }
-        h2 {
-            font-size: 1.15rem;
-            margin: 0;
-        }
-        /* キャッシュ状態を示すアイコンバッジ */
+        h2 { font-size: 1.15rem; margin: 0; }
         .cache-badge {
             display: inline-flex;
             align-items: center;
@@ -35,17 +31,8 @@
             background: #e2e8f0;
             color: #475569;
         }
-        .cache-badge.cached {
-            background: #dcfce7;
-            color: #166534;
-            border: 1px solid #86efac;
-        }
-        .cache-badge.not-cached {
-            background: #fef3c7;
-            color: #92400e;
-            border: 1px solid #fde68a;
-        }
-        /* コントロールパネル */
+        .cache-badge.cached { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+        .cache-badge.not-cached { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
         #control-panel {
             background: #fff;
             padding: 14px;
@@ -54,12 +41,7 @@
             margin-bottom: 12px;
             text-align: center;
         }
-        #status {
-            font-size: 0.85rem;
-            color: #555;
-            margin-bottom: 10px;
-            line-height: 1.4;
-        }
+        #status { font-size: 0.85rem; color: #555; margin-bottom: 10px; line-height: 1.4; }
         #start-btn {
             background: #10b981;
             color: white;
@@ -69,12 +51,8 @@
             font-size: 0.95rem;
             font-weight: bold;
             cursor: pointer;
-            transition: background 0.2s;
         }
-        #start-btn:hover { background: #059669; }
         #start-btn:disabled { background: #9ca3af; cursor: not-allowed; }
-
-        /* チャット画面 */
         #chat-container {
             height: 55vh;
             overflow-y: auto;
@@ -83,13 +61,8 @@
             border-radius: 12px;
             padding: 14px;
             margin-bottom: 12px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.04);
         }
-        .message {
-            margin-bottom: 12px;
-            line-height: 1.5;
-            word-break: break-word;
-        }
+        .message { margin-bottom: 12px; line-height: 1.5; word-break: break-word; }
         .message.user { text-align: right; }
         .message.user span {
             background: #2563eb;
@@ -107,10 +80,13 @@
             display: inline-block;
             border: 1px solid #e2e8f0;
         }
-        #input-container {
-            display: flex;
-            gap: 8px;
+        .rag-source {
+            font-size: 0.72rem;
+            color: #64748b;
+            margin-top: 4px;
+            padding-left: 4px;
         }
+        #input-container { display: flex; gap: 8px; }
         input[type="text"] {
             flex: 1;
             padding: 10px 14px;
@@ -119,7 +95,6 @@
             font-size: 1rem;
             outline: none;
         }
-        input[type="text"]:focus { border-color: #2563eb; }
         #send-btn {
             background: #2563eb;
             color: white;
@@ -136,9 +111,8 @@
 <body>
 
     <header>
-        <h2>🤖 ローカルAI 英会話</h2>
-        <!-- キャッシュ確認アイコン -->
-        <div id="cache-badge" class="cache-badge" title="モデルのキャッシュ状態">
+        <h2>🤖 ローカルAI 英会話 (Qwen 0.5B + RAG)</h2>
+        <div id="cache-badge" class="cache-badge">
             <span id="cache-icon">⏳</span>
             <span id="cache-text">確認中...</span>
         </div>
@@ -152,25 +126,70 @@
     <div id="chat-container"></div>
 
     <div id="input-container">
-        <input type="text" id="user-input" placeholder="英語で話しかけてみましょう (例: Hello!)" disabled>
+        <input type="text" id="user-input" placeholder="質問を英語で入力 (例: When is the festival?)" disabled>
         <button id="send-btn" disabled>送信</button>
     </div>
 
     <script type="module">
         import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
-        // 使用モデル：Llama 3.2 1B (4bit量子化・軽量版)
-        const selectedModel = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
-        let engine = null;
-        let isCached = false;
-
-        // 会話履歴（英語限定・短く自然な返答を強制するシステムプロンプト）
-        const conversationHistory = [
+        // ==========================================
+        // 1. RAG用の知識ベース
+        // ==========================================
+        const knowledgeBase = [
             {
-                role: "system",
-                content: "You are a friendly English conversation partner. You MUST reply ONLY in English, regardless of what language the user speaks. Keep your responses concise, natural, and encouraging."
+                id: "event_date",
+                text: "The annual school cultural festival (Sakura Festival) will be held on November 28 and 29, from 9:00 AM to 4:00 PM."
+            },
+            {
+                id: "cafeteria",
+                text: "The school cafeteria is open from 11:30 AM to 1:30 PM. Today's special menu is Curry Rice for 400 yen."
+            },
+            {
+                id: "library",
+                text: "The library is located on the 3rd floor of the main building. Students can borrow up to 5 books for 2 weeks."
+            },
+            {
+                id: "wifi",
+                text: "Free campus Wi-Fi is available for students. The SSID is 'Campus_Guest' and the password is 'study2026'."
             }
         ];
+
+        // ==========================================
+        // 2. 軽量検索関数（キーワードマッチング）
+        // ==========================================
+        function retrieveRelevantDocs(query, topK = 2) {
+            const stopWords = new Set(["the", "is", "are", "a", "an", "in", "on", "at", "to", "for", "of", "and", "or", "what", "when", "where", "how", "can", "i", "do", "does"]);
+            const queryWords = query
+                .toLowerCase()
+                .replace(/[^\w\s]/g, "")
+                .split(/\s+/)
+                .filter(w => w.length > 1 && !stopWords.has(w));
+
+            if (queryWords.length === 0) return [];
+
+            const scoredDocs = knowledgeBase.map(doc => {
+                const docTextLower = doc.text.toLowerCase();
+                let score = 0;
+                for (const word of queryWords) {
+                    if (docTextLower.includes(word)) score += 1;
+                }
+                return { ...doc, score };
+            });
+
+            return scoredDocs
+                .filter(d => d.score > 0)
+                .sort((a, b) => b.score - a.score)
+                .slice(0, topK);
+        }
+
+        // ==========================================
+        // 3. WebLLM 初期化・設定（Qwen2.5 0.5B）
+        // ==========================================
+        const selectedModel = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"; // 超軽量モデル
+        let engine = null;
+        let isCached = false;
+        const chatHistory = [];
 
         const cacheBadge = document.getElementById("cache-badge");
         const cacheIcon = document.getElementById("cache-icon");
@@ -181,86 +200,61 @@
         const userInput = document.getElementById("user-input");
         const sendBtn = document.getElementById("send-btn");
 
-        // 1. ページ読み込み時にキャッシュの有無を確認
         async function checkCacheStatus() {
-            try {
-                // WebGPU対応チェック
-                if (!navigator.gpu) {
-                    statusDiv.innerText = "エラー: お使いのブラウザはWebGPUに対応していません。最新のChromeまたはSafariをご利用ください。";
-                    cacheIcon.innerText = "❌";
-                    cacheText.innerText = "非対応";
-                    return;
-                }
-
-                // キャッシュ内にモデルが存在するか確認
-                isCached = await webllm.hasModelInCache(selectedModel);
-
-                if (isCached) {
-                    cacheBadge.className = "cache-badge cached";
-                    cacheIcon.innerText = "⚡";
-                    cacheText.innerText = "キャッシュ済 (通信不要)";
-                    statusDiv.innerText = "モデルは端末に保存済みです。通信量なしで即座に起動できます。";
-                    startBtn.innerText = "AIを起動する（オフライン可）";
-                } else {
-                    cacheBadge.className = "cache-badge not-cached";
-                    cacheIcon.innerText = "☁️";
-                    cacheText.innerText = "未ダウンロード";
-                    statusDiv.innerText = "初回のみAIモデル（約700MB〜880MB）のダウンロードが必要です。";
-                    startBtn.innerText = "ダウンロードを許可して起動";
-                }
-                startBtn.style.display = "inline-block";
-
-            } catch (error) {
-                console.error(error);
-                statusDiv.innerText = "キャッシュの確認中にエラーが発生しました。";
+            if (!navigator.gpu) {
+                statusDiv.innerText = "エラー: お使いのブラウザはWebGPUに対応していません。";
+                cacheIcon.innerText = "❌";
+                cacheText.innerText = "非対応";
+                return;
             }
+            isCached = await webllm.hasModelInCache(selectedModel);
+            if (isCached) {
+                cacheBadge.className = "cache-badge cached";
+                cacheIcon.innerText = "⚡";
+                cacheText.innerText = "キャッシュ済 (通信不要)";
+                statusDiv.innerText = "モデルは端末に保存済みです。通信量なしで即座に起動できます。";
+                startBtn.innerText = "AIを起動する（オフライン可）";
+            } else {
+                cacheBadge.className = "cache-badge not-cached";
+                cacheIcon.innerText = "☁️";
+                cacheText.innerText = "未ダウンロード";
+                statusDiv.innerText = "初回のみAIモデル（Qwen 0.5B / 約400MB）のダウンロードが必要です。";
+                startBtn.innerText = "ダウンロードを許可して起動";
+            }
+            startBtn.style.display = "inline-block";
         }
 
-        // 2. ユーザーの許可を得てからエンジンを初期化・ダウンロード
         startBtn.addEventListener("click", async () => {
             if (!isCached) {
                 const confirmed = confirm(
-                    "AIモデル（Llama 3.2 1B / 約880MB）をブラウザにダウンロードします。\nWi-Fi環境での実行を推奨します。ダウンロードを開始してもよろしいですか？"
+                    "AIモデル（Qwen2.5 0.5B / 約400MB）をダウンロードします。\nWi-Fi環境での実行を推奨します。よろしいですか？"
                 );
                 if (!confirmed) return;
             }
 
             startBtn.disabled = true;
-            statusDiv.innerText = "準備中...";
-
             try {
-                const initProgressCallback = (progress) => {
-                    statusDiv.innerText = `読み込み中: ${progress.text}`;
-                };
-
                 engine = await webllm.CreateMLCEngine(selectedModel, {
-                    initProgressCallback: initProgressCallback
+                    initProgressCallback: (p) => { statusDiv.innerText = `読み込み中: ${p.text}`; }
                 });
 
-                // 起動完了後のUI更新
                 cacheBadge.className = "cache-badge cached";
                 cacheIcon.innerText = "⚡";
                 cacheText.innerText = "キャッシュ済";
-                statusDiv.innerText = "✅ 準備完了！AIは英語のみで返答します。";
+                statusDiv.innerText = "✅ 準備完了！知識ベースを参照しながら英語で回答します。";
                 startBtn.style.display = "none";
-
                 userInput.disabled = false;
                 sendBtn.disabled = false;
                 userInput.focus();
 
-                // 最初の挨拶をAIから表示
-                const initialGreeting = "Hello! I'm Llama 3.2 running locally on your device. Let's chat in English! How are you doing today?";
-                appendMessage(initialGreeting, "assistant");
-                conversationHistory.push({ role: "assistant", content: initialGreeting });
-
+                appendMessage("Hello! Ask me anything about the school festival, cafeteria, library, or Wi-Fi in English!", "assistant");
             } catch (error) {
                 console.error(error);
-                statusDiv.innerText = "エラー: モデルの読み込みに失敗しました（メモリ不足またはWebGPUエラーの可能性があります）。";
+                statusDiv.innerText = "エラー: モデルの読み込みに失敗しました。";
                 startBtn.disabled = false;
             }
         });
 
-        // 3. メッセージ送信処理
         async function sendMessage() {
             const text = userInput.value.trim();
             if (!text || !engine) return;
@@ -270,15 +264,35 @@
             sendBtn.disabled = true;
 
             appendMessage(text, "user");
-            conversationHistory.push({ role: "user", content: text });
 
-            const assistantMsgSpan = appendMessage("", "assistant");
+            const relevantDocs = retrieveRelevantDocs(text, 2);
+            const contextText = relevantDocs.length > 0
+                ? relevantDocs.map(d => `- ${d.text}`).join("\n")
+                : "No specific reference found in the knowledge base.";
+
+            const dynamicSystemPrompt = {
+                role: "system",
+                content: `You are a helpful English conversation assistant. You MUST reply ONLY in English, even if the user writes in Japanese.
+Use the following Reference Information to answer the user's question accurately.
+
+[Reference Information]
+${contextText}`
+            };
+
+            const recentHistory = chatHistory.slice(-4);
+            const messagesToSend = [
+                dynamicSystemPrompt,
+                ...recentHistory,
+                { role: "user", content: text }
+            ];
+
+            const assistantMsgSpan = appendMessage("", "assistant", relevantDocs);
 
             try {
                 const replyStream = await engine.chat.completions.create({
-                    messages: conversationHistory,
+                    messages: messagesToSend,
                     stream: true,
-                    temperature: 0.7,
+                    temperature: 0.4,
                 });
 
                 let fullReply = "";
@@ -289,12 +303,12 @@
                     chatContainer.scrollTop = chatContainer.scrollHeight;
                 }
 
-                // AIの返答を履歴に追加
-                conversationHistory.push({ role: "assistant", content: fullReply });
+                chatHistory.push({ role: "user", content: text });
+                chatHistory.push({ role: "assistant", content: fullReply });
 
             } catch (error) {
                 console.error(error);
-                assistantMsgSpan.innerText = "Sorry, an error occurred while generating the response.";
+                assistantMsgSpan.innerText = "Sorry, an error occurred.";
             } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -302,12 +316,20 @@
             }
         }
 
-        function appendMessage(text, sender) {
+        function appendMessage(text, sender, sources = []) {
             const msgDiv = document.createElement("div");
             msgDiv.className = `message ${sender}`;
             const span = document.createElement("span");
             span.innerText = text;
             msgDiv.appendChild(span);
+
+            if (sender === "assistant" && sources.length > 0) {
+                const sourceDiv = document.createElement("div");
+                sourceDiv.className = "rag-source";
+                sourceDiv.innerText = `📚 参照データ: ${sources.map(s => s.id).join(", ")}`;
+                msgDiv.appendChild(sourceDiv);
+            }
+
             chatContainer.appendChild(msgDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
             return span;
@@ -315,12 +337,9 @@
 
         sendBtn.addEventListener("click", sendMessage);
         userInput.addEventListener("keypress", (e) => {
-            if (e.key === "Enter" && !sendBtn.disabled) {
-                sendMessage();
-            }
+            if (e.key === "Enter" && !sendBtn.disabled) sendMessage();
         });
 
-        // 起動時にキャッシュ確認を実行
         checkCacheStatus();
     </script>
 </body>
