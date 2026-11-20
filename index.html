@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ローカルAI 英会話チャット (Llama 3.2 1B)</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 16px;
+            background-color: #f4f6f9;
+            color: #333;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        h2 {
+            font-size: 1.15rem;
+            margin: 0;
+        }
+        /* キャッシュ状態を示すアイコンバッジ */
+        .cache-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            padding: 5px 10px;
+            border-radius: 20px;
+            background: #e2e8f0;
+            color: #475569;
+        }
+        .cache-badge.cached {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #86efac;
+        }
+        .cache-badge.not-cached {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+        /* コントロールパネル */
+        #control-panel {
+            background: #fff;
+            padding: 14px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        #status {
+            font-size: 0.85rem;
+            color: #555;
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+        #start-btn {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        #start-btn:hover { background: #059669; }
+        #start-btn:disabled { background: #9ca3af; cursor: not-allowed; }
+
+        /* チャット画面 */
+        #chat-container {
+            height: 55vh;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+        }
+        .message {
+            margin-bottom: 12px;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+        .message.user { text-align: right; }
+        .message.user span {
+            background: #2563eb;
+            color: #fff;
+            padding: 8px 14px;
+            border-radius: 16px 16px 0 16px;
+            display: inline-block;
+            text-align: left;
+        }
+        .message.assistant span {
+            background: #f1f5f9;
+            color: #1e293b;
+            padding: 8px 14px;
+            border-radius: 16px 16px 16px 0;
+            display: inline-block;
+            border: 1px solid #e2e8f0;
+        }
+        #input-container {
+            display: flex;
+            gap: 8px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 24px;
+            font-size: 1rem;
+            outline: none;
+        }
+        input[type="text"]:focus { border-color: #2563eb; }
+        #send-btn {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 0 18px;
+            border-radius: 24px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        #send-btn:disabled { background: #93c5fd; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h2>🤖 ローカルAI 英会話</h2>
+        <!-- キャッシュ確認アイコン -->
+        <div id="cache-badge" class="cache-badge" title="モデルのキャッシュ状態">
+            <span id="cache-icon">⏳</span>
+            <span id="cache-text">確認中...</span>
+        </div>
+    </header>
+
+    <div id="control-panel">
+        <div id="status">端末内のAIモデルを確認しています...</div>
+        <button id="start-btn" style="display: none;">AIを起動する</button>
+    </div>
+
+    <div id="chat-container"></div>
+
+    <div id="input-container">
+        <input type="text" id="user-input" placeholder="英語で話しかけてみましょう (例: Hello!)" disabled>
+        <button id="send-btn" disabled>送信</button>
+    </div>
+
+    <script type="module">
+        import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+
+        // 使用モデル：Llama 3.2 1B (4bit量子化・軽量版)
+        const selectedModel = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+        let engine = null;
+        let isCached = false;
+
+        // 会話履歴（英語限定・短く自然な返答を強制するシステムプロンプト）
+        const conversationHistory = [
+            {
+                role: "system",
+                content: "You are a friendly English conversation partner. You MUST reply ONLY in English, regardless of what language the user speaks. Keep your responses concise, natural, and encouraging."
+            }
+        ];
+
+        const cacheBadge = document.getElementById("cache-badge");
+        const cacheIcon = document.getElementById("cache-icon");
+        const cacheText = document.getElementById("cache-text");
+        const statusDiv = document.getElementById("status");
+        const startBtn = document.getElementById("start-btn");
+        const chatContainer = document.getElementById("chat-container");
+        const userInput = document.getElementById("user-input");
+        const sendBtn = document.getElementById("send-btn");
+
+        // 1. ページ読み込み時にキャッシュの有無を確認
+        async function checkCacheStatus() {
+            try {
+                // WebGPU対応チェック
+                if (!navigator.gpu) {
+                    statusDiv.innerText = "エラー: お使いのブラウザはWebGPUに対応していません。最新のChromeまたはSafariをご利用ください。";
+                    cacheIcon.innerText = "❌";
+                    cacheText.innerText = "非対応";
+                    return;
+                }
+
+                // キャッシュ内にモデルが存在するか確認
+                isCached = await webllm.hasModelInCache(selectedModel);
+
+                if (isCached) {
+                    cacheBadge.className = "cache-badge cached";
+                    cacheIcon.innerText = "⚡";
+                    cacheText.innerText = "キャッシュ済 (通信不要)";
+                    statusDiv.innerText = "モデルは端末に保存済みです。通信量なしで即座に起動できます。";
+                    startBtn.innerText = "AIを起動する（オフライン可）";
+                } else {
+                    cacheBadge.className = "cache-badge not-cached";
+                    cacheIcon.innerText = "☁️";
+                    cacheText.innerText = "未ダウンロード";
+                    statusDiv.innerText = "初回のみAIモデル（約700MB〜880MB）のダウンロードが必要です。";
+                    startBtn.innerText = "ダウンロードを許可して起動";
+                }
+                startBtn.style.display = "inline-block";
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerText = "キャッシュの確認中にエラーが発生しました。";
+            }
+        }
+
+        // 2. ユーザーの許可を得てからエンジンを初期化・ダウンロード
+        startBtn.addEventListener("click", async () => {
+            if (!isCached) {
+                const confirmed = confirm(
+                    "AIモデル（Llama 3.2 1B / 約880MB）をブラウザにダウンロードします。\nWi-Fi環境での実行を推奨します。ダウンロードを開始してもよろしいですか？"
+                );
+                if (!confirmed) return;
+            }
+
+            startBtn.disabled = true;
+            statusDiv.innerText = "準備中...";
+
+            try {
+                const initProgressCallback = (progress) => {
+                    statusDiv.innerText = `読み込み中: ${progress.text}`;
+                };
+
+                engine = await webllm.CreateMLCEngine(selectedModel, {
+                    initProgressCallback: initProgressCallback
+                });
+
+                // 起動完了後のUI更新
+                cacheBadge.className = "cache-badge cached";
+                cacheIcon.innerText = "⚡";
+                cacheText.innerText = "キャッシュ済";
+                statusDiv.innerText = "✅ 準備完了！AIは英語のみで返答します。";
+                startBtn.style.display = "none";
+
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+                userInput.focus();
+
+                // 最初の挨拶をAIから表示
+                const initialGreeting = "Hello! I'm Llama 3.2 running locally on your device. Let's chat in English! How are you doing today?";
+                appendMessage(initialGreeting, "assistant");
+                conversationHistory.push({ role: "assistant", content: initialGreeting });
+
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerText = "エラー: モデルの読み込みに失敗しました（メモリ不足またはWebGPUエラーの可能性があります）。";
+                startBtn.disabled = false;
+            }
+        });
+
+        // 3. メッセージ送信処理
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text || !engine) return;
+
+            userInput.value = "";
+            userInput.disabled = true;
+            sendBtn.disabled = true;
+
+            appendMessage(text, "user");
+            conversationHistory.push({ role: "user", content: text });
+
+            const assistantMsgSpan = appendMessage("", "assistant");
+
+            try {
+                const replyStream = await engine.chat.completions.create({
+                    messages: conversationHistory,
+                    stream: true,
+                    temperature: 0.7,
+                });
+
+                let fullReply = "";
+                for await (const chunk of replyStream) {
+                    const delta = chunk.choices[0]?.delta?.content || "";
+                    fullReply += delta;
+                    assistantMsgSpan.innerText = fullReply;
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+
+                // AIの返答を履歴に追加
+                conversationHistory.push({ role: "assistant", content: fullReply });
+
+            } catch (error) {
+                console.error(error);
+                assistantMsgSpan.innerText = "Sorry, an error occurred while generating the response.";
+            } finally {
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+                userInput.focus();
+            }
+        }
+
+        function appendMessage(text, sender) {
+            const msgDiv = document.createElement("div");
+            msgDiv.className = `message ${sender}`;
+            const span = document.createElement("span");
+            span.innerText = text;
+            msgDiv.appendChild(span);
+            chatContainer.appendChild(msgDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return span;
+        }
+
+        sendBtn.addEventListener("click", sendMessage);
+        userInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter" && !sendBtn.disabled) {
+                sendMessage();
+            }
+        });
+
+        // 起動時にキャッシュ確認を実行
+        checkCacheStatus();
+    </script>
+</body>
+</html>
