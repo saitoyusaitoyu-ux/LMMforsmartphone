@@ -1,45 +1,556 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WebAR VRM Viewer</title>
-    <!-- A-Frame -->
-    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <!-- MindAR for A-Frame -->
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
-    <!-- 3Dモデルのアニメーション制御などに必要なライブラリ -->
-    <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
-    <!-- VRMモデルをロードするためのローダー（community製） -->
-    <script src="https://unpkg.com/aframe-vrm-loader@^1.0.0/dist/aframe-vrm-loader.js"></script>
-  </head>
-  <body style="margin: 0; overflow: hidden;">
-    <a-scene 
-      mindar-image="imageTargetSrc: ./targets.mind;" 
-      color-space="sRGB" 
-      renderer="colorManagement: true, physicallyCorrectLights" 
-      vr-mode-ui="enabled: false" 
-      device-orientation-permission-ui="enabled: false">
-      
-      <a-assets>
-        <!-- .vrmファイルを読み込む指定 -->
-        <a-asset-item id="vrmModel" src="./model.vrm"></a-asset-item>
-      </a-assets>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ローカルAI 英会話 (安定化・最適化版)</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 16px;
+            background-color: #f4f6f9;
+            color: #333;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        h2 { font-size: 1.1rem; margin: 0; }
+        .cache-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            padding: 5px 10px;
+            border-radius: 20px;
+            background: #e2e8f0;
+            color: #475569;
+        }
+        .cache-badge.cached { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+        .cache-badge.not-cached { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+        #control-panel {
+            background: #fff;
+            padding: 14px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        #status { font-size: 0.85rem; color: #555; margin-bottom: 10px; line-height: 1.4; }
+        #start-btn {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        #start-btn:disabled { background: #9ca3af; cursor: not-allowed; }
+        #chat-container {
+            height: 55vh;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+        .message { margin-bottom: 12px; line-height: 1.5; word-break: break-word; }
+        .message.user { text-align: right; }
+        .message.user span {
+            background: #2563eb;
+            color: #fff;
+            padding: 8px 14px;
+            border-radius: 16px 16px 0 16px;
+            display: inline-block;
+            text-align: left;
+        }
+        .message.assistant span {
+            background: #f1f5f9;
+            color: #1e293b;
+            padding: 8px 14px;
+            border-radius: 16px 16px 16px 0;
+            display: inline-block;
+            border: 1px solid #e2e8f0;
+        }
+        .rag-source {
+            font-size: 0.72rem;
+            color: #64748b;
+            margin-top: 4px;
+            padding-left: 4px;
+        }
+        #input-container { display: flex; gap: 8px; }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 24px;
+            font-size: 1rem;
+            outline: none;
+        }
+        #send-btn {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 0 18px;
+            border-radius: 24px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        #send-btn:disabled { background: #93c5fd; cursor: not-allowed; }
+    </style>
+</head>
+<body>
 
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+    <header>
+        <h2>🤖 ローカルAI 英会話 (Worker最適化)</h2>
+        <div id="cache-badge" class="cache-badge">
+            <span id="cache-icon">⏳</span>
+            <span id="cache-text">確認中...</span>
+        </div>
+    </header>
 
-      <!-- ターゲット（マーカー）を認識したとき -->
-      <a-entity mindar-image-target="targetIndex: 0">
-        
-        <!-- VRMモデルの配置、回転、アニメーションの指定 -->
-        <a-entity 
-          vrm-model="src: #vrmModel;" 
-          position="0 -0.5 0" 
-          rotation="0 0 0" 
-          scale="1 1 1"
-          animation="property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear;">
-        </a-entity>
+    <div id="control-panel">
+        <div id="status">端末内のAIモデルとストレージを確認しています...</div>
+        <button id="start-btn" style="display: none;">AIを起動する</button>
+    </div>
 
-      </a-entity>
-    </a-scene>
-  </body>
+    <div id="chat-container"></div>
+
+    <div id="input-container">
+        <input type="text" id="user-input" placeholder="英語で質問 (例: When is the festival?)" disabled>
+        <button id="send-btn" disabled>送信</button>
+    </div>
+
+    <script type="module">
+        import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+
+        // ==========================================
+        // 1. キャッシュ・ストレージ設定の安定化
+        // ==========================================
+        // IndexedDBを強制使用し、メモリ圧迫とストレージ不整合を防止
+        const stableAppConfig = {
+            ...webllm.prebuiltAppConfig,
+            useIndexedDB: true
+        };
+
+        const selectedModel = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
+
+        // ==========================================
+        // 2. RAG用の知識ベース
+        // ==========================================
+        const knowledgeBase = [
+            {
+                id: "asaka_basic_01",
+                text: "Fukushima Prefectural Asaka High School is a public preparatory secondary institution located at 5-25-63 Kaisei, Koriyama City, Fukushima Prefecture, 963-8851, Japan."
+            },
+            {
+                id: "asaka_basic_02",
+                text: "The high school operates under standard high school code 07114F and official school code D107220360011."
+            },
+            {
+                id: "asaka_basic_03",
+                text: "The institution is commonly known by the pronunciation Asaka and the abbreviation Anko."
+            },
+            {
+                id: "asaka_basic_04",
+                text: "Asaka High School has educated over 36,000 graduates since its establishment."
+            },
+            {
+                id: "asaka_basic_05",
+                text: "The school holds an academic standard deviation score (hensachi) ranging between 68 and 70, representing top-tier academic standing in Fukushima Prefecture."
+            },
+            {
+                id: "asaka_basic_06",
+                text: "Originally established as an all-male institution, Asaka High School converted to a fully co-educational system in April 2001."
+            },
+            {
+                id: "asaka_basic_07",
+                text: "In April 2025, Fukushima Prefectural Asaka Junior High School was established on the same campus to form an integrated six-year secondary education system."
+            },
+            {
+                id: "asaka_philosophy_01",
+                text: "The core mottos of the school, known as the Asaka Spirit, consist of Bunbu Ryodo, Shitsujitsu Goken, and Kaitakusha Seishin."
+            },
+            {
+                id: "asaka_philosophy_02",
+                text: "Bunbu Ryodo emphasizes striving for academic excellence alongside dedication to athletic or extracurricular activities."
+            },
+            {
+                id: "asaka_philosophy_03",
+                text: "Shitsujitsu Goken encourages simplicity, fortitude, and moral as well as physical strength."
+            },
+            {
+                id: "asaka_philosophy_04",
+                text: "Kaitakusha Seishin fosters a pioneer spirit to develop proactive problem-solvers who drive social innovation."
+            },
+            {
+                id: "asaka_philosophy_05",
+                text: "The main educational goal of Asaka High School is to cultivate well-rounded individuals who hone intellect, virtue, and physical strength to contribute to humanity and shape future society."
+            },
+            {
+                id: "asaka_history_01",
+                text: "The school was originally founded on September 11, 1884, as Fukushima Prefectural Fukushima Middle School within the Fukushima Normal School campus, absorbing Nihonmatsu Middle School."
+            },
+            {
+                id: "asaka_history_02",
+                text: "In April 1889, the middle school moved to Kuwano Village, Asaka District (present-day Kuwano-machi, Koriyama City) following a political resolution placing the prefectural government in Fukushima City and the principal middle school in Koriyama."
+            },
+            {
+                id: "asaka_history_03",
+                text: "During the 1889 relocation, students and staff marched over 10 ri (approximately 40 kilometers) carrying luggage on their backs in traditional dark blue splashed-pattern clothing."
+            },
+            {
+                id: "asaka_history_04",
+                text: "The institution was officially renamed Fukushima Prefectural Asaka Middle School in 1901."
+            },
+            {
+                id: "asaka_history_05",
+                text: "Following post-WWII educational reforms in 1948, the school was reorganized as Fukushima Prefectural Asaka High School."
+            },
+            {
+                id: "asaka_history_06",
+                text: "In 1977, the Old Main Building of the school was designated as a National Important Cultural Property of Japan."
+            },
+            {
+                id: "asaka_history_07",
+                text: "To commemorate its 100th anniversary in 1984, the Old Main Building was formally opened as the Asaka History Museum."
+            },
+            {
+                id: "asaka_campus_01",
+                text: "The historic Old Main Building features white two-story wooden Meiji-era architecture with a balcony-style entrance."
+            },
+            {
+                id: "asaka_campus_02",
+                text: "Campus facilities include two indoor gymnasiums for athletic activities."
+            },
+            {
+                id: "asaka_campus_03",
+                text: "The school includes Asakano Hall, a specialized lecture auditorium capable of seating approximately 200 people."
+            },
+            {
+                id: "asaka_campus_04",
+                text: "Kuwano Library features a dedicated self-study hall accommodating nearly 100 students."
+            },
+            {
+                id: "asaka_academics_01",
+                text: "Asaka High School has been designated by MEXT as a Super Science High School (SSH) across multiple phases, including Phase I (2002–2006), Phase II (2019–2023), and Phase III (2024–2028)."
+            },
+            {
+                id: "asaka_academics_02",
+                text: "The SSH curriculum includes specialized inquiry courses such as SS Inquiry I focusing on regional creation and SS Inquiry II centered on global SDGs research."
+            },
+            {
+                id: "asaka_academics_03",
+                text: "SSH programs incorporate Tsukuba Science Tours, corporate academic internships, and joint international research collaborations with institutions in Thailand and Portugal."
+            },
+            {
+                id: "asaka_academics_04",
+                text: "The high school operates a credit-based system (tani-sei) and provides a dedicated Medical School Track (Igakubu Course)."
+            },
+            {
+                id: "asaka_academics_05",
+                text: "Admissions under the Fukushima Prefectural system evaluate applicants on a 500-point total, split evenly between 250 points for the academic examination and 250 points for internal school reports (naishin-ten)."
+            },
+            {
+                id: "asaka_academics_06",
+                text: "Internal school report evaluation weighs four practical non-academic subjects double, accounting for 195 points of the 250 internal report total."
+            },
+            {
+                id: "asaka_academics_07",
+                text: "Successful candidates typically achieve an academic entrance examination score between 210 and 220 or higher out of 250."
+            },
+            {
+                id: "asaka_alumni_literary_01",
+                text: "Asaka High School is one of only four high schools nationwide—alongside Hibiya, Kudan, and Azabu—to have produced three Akutagawa Prize-winning authors."
+            },
+            {
+                id: "asaka_alumni_literary_02",
+                text: "Yoshihide Nakayama was awarded the 7th Akutagawa Prize in 1938 for Atsumono Saki."
+            },
+            {
+                id: "asaka_alumni_literary_03",
+                text: "Kaoru Tounobe received the 18th Akutagawa Prize in 1943 for Washi."
+            },
+            {
+                id: "asaka_alumni_literary_04",
+                text: "Sokyu Genyu won the 125th Akutagawa Prize in 2001 for Chuin no Hana and serves as chief priest of Fukuju-ji Temple in Miharu Town."
+            },
+            {
+                id: "asaka_alumni_literary_05",
+                text: "Prominent early literary figures from the school include 1st-class alumnus Chogyu Takayama and novelist Masao Kume."
+            },
+            {
+                id: "asaka_alumni_literary_06",
+                text: "Other notable creative figures include Mishima Yukio Prize-winning author Hideo Furukawa, manga artist Sato Rokuro, and composer Joji Yuasa."
+            },
+            {
+                id: "asaka_alumni_leadership_01",
+                text: "Academic alumni include Yale University historian Kan'ichi Asakawa, Kyoto University Presidents Shinzo Shinjo and Shigenao Konishi, and Tohoku University President Teiji Tominaga."
+            },
+            {
+                id: "asaka_alumni_leadership_02",
+                text: "Prominent healthcare figures include otorhinolaryngology pioneer Inokichi Kubo and former World Medical Association President Eitaka Tsuboi."
+            },
+            {
+                id: "asaka_alumni_leadership_03",
+                text: "Public administration and political alumni include former Foreign Minister Koichiro Gemba, former Minister of Health, Labour and Welfare Takumi Nemoto, former Fukushima Governor Eisaku Sato, and former JASDF Chief of Staff Toshio Tamogami."
+            },
+            {
+                id: "asaka_extracurricular_01",
+                text: "Approximately 90% of enrolled students actively participate in extracurricular clubs."
+            },
+            {
+                id: "asaka_extracurricular_02",
+                text: "The Baseball Club participated in the 73rd National High School Baseball Invitational Tournament in 2001 via the 21st Century Selection Slot."
+            },
+            {
+                id: "asaka_extracurricular_03",
+                text: "The Chorus Club won the Minister of Education, Culture, Sports, Science and Technology Award at the 2010 National Competition."
+            },
+            {
+                id: "asaka_extracurricular_04",
+                text: "Active clubs include Rugby, Kendo, Handball, Brass Band, String Orchestra, Chemistry, Physics, Biology, Earth Science, Drama, and Shogi."
+            },
+            {
+                id: "asaka_events_01",
+                text: "Major school events include the Shikisai Festival (cultural festival held twice every five years), the annual Sports Festival, and the Road Race."
+            },
+            {
+                id: "asaka_events_02",
+                text: "Incoming freshmen participate in an intensive song orientation week led by the Cheering Squad (Oendan) to learn traditional school songs."
+            },
+            {
+                id: "asaka_media_01",
+                text: "The historic Asaka History Museum served as a location setting for NHK's drama Saka no Ue no Kumo, Fuji TV's Botchan (2016), and NHK's morning drama Yell (2020)."
+            },
+            {
+                id: "asaka_media_02",
+                text: "Asaka High School served as the visual school model for the television anime series Mikakunin de Shingoukei."
+            }
+        ];
+
+        function retrieveRelevantDocs(query, topK = 2) {
+            const stopWords = new Set(["the", "is", "are", "a", "an", "in", "on", "at", "to", "for", "of", "and", "or", "what", "when", "where", "how", "can", "i", "do", "does"]);
+            const queryWords = query
+                .toLowerCase()
+                .replace(/[^\w\s]/g, "")
+                .split(/\s+/)
+                .filter(w => w.length > 1 && !stopWords.has(w));
+
+            if (queryWords.length === 0) return [];
+
+            return knowledgeBase
+                .map(doc => {
+                    const docTextLower = doc.text.toLowerCase();
+                    let score = 0;
+                    for (const word of queryWords) {
+                        if (docTextLower.includes(word)) score += 1;
+                    }
+                    return { ...doc, score };
+                })
+                .filter(d => d.score > 0)
+                .sort((a, b) => b.score - a.score)
+                .slice(0, topK);
+        }
+
+        // ==========================================
+        // 3. バックエンドの実行スレッド最適化 (Web Worker)
+        // ==========================================
+        // HTML1枚のまま別スレッド(Worker)を生成するためのインラインコード
+        const workerCode = `
+            import { WebWorkerMLCEngineHandler } from "https://esm.run/@mlc-ai/web-llm";
+            const handler = new WebWorkerMLCEngineHandler();
+            self.onmessage = (msg) => {
+                handler.onmessage(msg);
+            };
+        `;
+
+        function createOptimizedWorker() {
+            const blob = new Blob([workerCode], { type: "application/javascript" });
+            const workerUrl = URL.createObjectURL(blob);
+            return new Worker(workerUrl, { type: "module" });
+        }
+
+        let engine = null;
+        let isCached = false;
+        const chatHistory = [];
+
+        const cacheBadge = document.getElementById("cache-badge");
+        const cacheIcon = document.getElementById("cache-icon");
+        const cacheText = document.getElementById("cache-text");
+        const statusDiv = document.getElementById("status");
+        const startBtn = document.getElementById("start-btn");
+        const chatContainer = document.getElementById("chat-container");
+        const userInput = document.getElementById("user-input");
+        const sendBtn = document.getElementById("send-btn");
+
+        async function checkCacheStatus() {
+            if (!navigator.gpu) {
+                statusDiv.innerText = "エラー: お使いのブラウザはWebGPUに対応していません。";
+                cacheIcon.innerText = "❌";
+                cacheText.innerText = "非対応";
+                return;
+            }
+            // 安定化設定(stableAppConfig)を指定してIndexedDB内のキャッシュを確認
+            isCached = await webllm.hasModelInCache(selectedModel, stableAppConfig);
+            if (isCached) {
+                cacheBadge.className = "cache-badge cached";
+                cacheIcon.innerText = "⚡";
+                cacheText.innerText = "キャッシュ済 (IndexedDB)";
+                statusDiv.innerText = "モデルは端末ストレージに保存済みです。即座に起動できます。";
+                startBtn.innerText = "AIを起動する（オフライン可）";
+            } else {
+                cacheBadge.className = "cache-badge not-cached";
+                cacheIcon.innerText = "☁️";
+                cacheText.innerText = "未ダウンロード";
+                statusDiv.innerText = "初回のみAIモデル（約400MB）のダウンロードが必要です。";
+                startBtn.innerText = "ダウンロードを許可して起動";
+            }
+            startBtn.style.display = "inline-block";
+        }
+
+        startBtn.addEventListener("click", async () => {
+            if (!isCached) {
+                const confirmed = confirm(
+                    "AIモデル（Qwen2.5 0.5B / 約400MB）をIndexedDBにダウンロードします。\nよろしいですか？"
+                );
+                if (!confirmed) return;
+            }
+
+            startBtn.disabled = true;
+            try {
+                // 別スレッド(Web Worker)を生成してエンジンを初期化
+                const worker = createOptimizedWorker();
+                
+                engine = await webllm.CreateWebWorkerMLCEngine(
+                    worker,
+                    selectedModel,
+                    {
+                        appConfig: stableAppConfig,
+                        initProgressCallback: (p) => {
+                            statusDiv.innerText = `読み込み中: ${p.text}`;
+                        },
+                        // GPUバッファ溢れを防ぐためコンテキスト長を最小限に制限
+                        chatOpts: {
+                            context_window_size: 1024
+                        }
+                    }
+                );
+
+                cacheBadge.className = "cache-badge cached";
+                cacheIcon.innerText = "⚡";
+                cacheText.innerText = "キャッシュ済 (最適化済)";
+                statusDiv.innerText = "✅ 準備完了！別スレッドで安定動作中です（英語限定）。";
+                startBtn.style.display = "none";
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+                userInput.focus();
+
+                appendMessage("Hello! Ask me anything about Asaka high school", "assistant");
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerText = "起動エラー: " + error.message;
+                startBtn.disabled = false;
+            }
+        });
+
+        async function sendMessage() {
+            const text = userInput.value.trim();
+            if (!text || !engine) return;
+
+            userInput.value = "";
+            userInput.disabled = true;
+            sendBtn.disabled = true;
+
+            appendMessage(text, "user");
+
+            const relevantDocs = retrieveRelevantDocs(text, 2);
+            const contextText = relevantDocs.length > 0
+                ? relevantDocs.map(d => `- ${d.text}`).join("\n")
+                : "No specific reference found in the knowledge base.";
+
+            const dynamicSystemPrompt = {
+                role: "system",
+                content: `You are a helpful English conversation assistant. You MUST reply ONLY in English, even if the user writes in Japanese.
+Use the following Reference Information to answer concisely.
+
+[Reference Information]
+${contextText}`
+            };
+
+            // メモリ負荷を抑えるため履歴は直近2往復（4メッセージ）に制限
+            const recentHistory = chatHistory.slice(-4);
+            const messagesToSend = [
+                dynamicSystemPrompt,
+                ...recentHistory,
+                { role: "user", content: text }
+            ];
+
+            const assistantMsgSpan = appendMessage("", "assistant", relevantDocs);
+
+            try {
+                const replyStream = await engine.chat.completions.create({
+                    messages: messagesToSend,
+                    stream: true,
+                    temperature: 0.4,
+                    max_tokens: 150 // 一度のGPU演算量を制限して切断(DeviceLost)を防止
+                });
+
+                let fullReply = "";
+                for await (const chunk of replyStream) {
+                    const delta = chunk.choices[0]?.delta?.content || "";
+                    fullReply += delta;
+                    assistantMsgSpan.innerText = fullReply;
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+
+                chatHistory.push({ role: "user", content: text });
+                chatHistory.push({ role: "assistant", content: fullReply });
+
+            } catch (error) {
+                console.error(error);
+                assistantMsgSpan.innerText = "Error Details: " + error.message;
+            } finally {
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+                userInput.focus();
+            }
+        }
+
+        function appendMessage(text, sender, sources = []) {
+            const msgDiv = document.createElement("div");
+            msgDiv.className = `message ${sender}`;
+            const span = document.createElement("span");
+            span.innerText = text;
+            msgDiv.appendChild(span);
+
+            if (sender === "assistant" && sources.length > 0) {
+                const sourceDiv = document.createElement("div");
+                sourceDiv.className = "rag-source";
+                sourceDiv.innerText = `📚 参照データ: ${sources.map(s => s.id).join(", ")}`;
+                msgDiv.appendChild(sourceDiv);
+            }
+
+            chatContainer.appendChild(msgDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return span;
+        }
+
+        sendBtn.addEventListener("click", sendMessage);
+        userInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter" && !sendBtn.disabled) sendMessage();
+        });
+
+        checkCacheStatus();
+    </script>
+</body>
 </html>
