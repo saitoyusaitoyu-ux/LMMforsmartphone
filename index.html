@@ -478,10 +478,11 @@ ${contextText}`
                 chatHistory.push({ role: "user", content: text });
                 chatHistory.push({ role: "assistant", content: fullReply });
 
-            } catch (error) {
-                console.error(error);
-                assistantMsgSpan.innerText = "Sorry, an error occurred.";
-            } finally {
+                } catch (error) {
+                    console.error(error);
+                    // エラーの詳細なメッセージを画面の吹き出しに出力する
+                    assistantMsgSpan.innerText = "Error Details: " + error.message;
+                } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
                 userInput.focus();
