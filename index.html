@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ローカルAI 英会話チャットver.asaka (Qwen 0.5B + RAG)</title>
+    <title>ローカルAI 英会話 (安定化・最適化版)</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -19,7 +19,7 @@
             align-items: center;
             margin-bottom: 12px;
         }
-        h2 { font-size: 1.15rem; margin: 0; }
+        h2 { font-size: 1.1rem; margin: 0; }
         .cache-badge {
             display: inline-flex;
             align-items: center;
@@ -111,7 +111,7 @@
 <body>
 
     <header>
-        <h2>ローカルAI 英会話 ver,Asaka (Qwen 0.5B + RAG)</h2>
+        <h2>🤖 ローカルAI 英会話 (Worker最適化)</h2>
         <div id="cache-badge" class="cache-badge">
             <span id="cache-icon">⏳</span>
             <span id="cache-text">確認中...</span>
@@ -119,14 +119,14 @@
     </header>
 
     <div id="control-panel">
-        <div id="status">端末内のAIモデルを確認しています...</div>
+        <div id="status">端末内のAIモデルとストレージを確認しています...</div>
         <button id="start-btn" style="display: none;">AIを起動する</button>
     </div>
 
     <div id="chat-container"></div>
 
     <div id="input-container">
-        <input type="text" id="user-input" placeholder="質問を英語で入力 (例: how are you?)" disabled>
+        <input type="text" id="user-input" placeholder="英語で質問 (例: When is the festival?)" disabled>
         <button id="send-btn" disabled>送信</button>
     </div>
 
@@ -134,7 +134,18 @@
         import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
         // ==========================================
-        // 1. RAG用の知識ベース
+        // 1. キャッシュ・ストレージ設定の安定化
+        // ==========================================
+        // IndexedDBを強制使用し、メモリ圧迫とストレージ不整合を防止
+        const stableAppConfig = {
+            ...webllm.prebuiltAppConfig,
+            useIndexedDB: true
+        };
+
+        const selectedModel = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
+
+        // ==========================================
+        // 2. RAG用の知識ベース
         // ==========================================
         const knowledgeBase = [
             {
@@ -327,9 +338,6 @@
             }
         ];
 
-        // ==========================================
-        // 2. 軽量検索関数（キーワードマッチング）
-        // ==========================================
         function retrieveRelevantDocs(query, topK = 2) {
             const stopWords = new Set(["the", "is", "are", "a", "an", "in", "on", "at", "to", "for", "of", "and", "or", "what", "when", "where", "how", "can", "i", "do", "does"]);
             const queryWords = query
@@ -340,25 +348,38 @@
 
             if (queryWords.length === 0) return [];
 
-            const scoredDocs = knowledgeBase.map(doc => {
-                const docTextLower = doc.text.toLowerCase();
-                let score = 0;
-                for (const word of queryWords) {
-                    if (docTextLower.includes(word)) score += 1;
-                }
-                return { ...doc, score };
-            });
-
-            return scoredDocs
+            return knowledgeBase
+                .map(doc => {
+                    const docTextLower = doc.text.toLowerCase();
+                    let score = 0;
+                    for (const word of queryWords) {
+                        if (docTextLower.includes(word)) score += 1;
+                    }
+                    return { ...doc, score };
+                })
                 .filter(d => d.score > 0)
                 .sort((a, b) => b.score - a.score)
                 .slice(0, topK);
         }
 
         // ==========================================
-        // 3. WebLLM 初期化・設定（Qwen2.5 0.5B）
+        // 3. バックエンドの実行スレッド最適化 (Web Worker)
         // ==========================================
-        const selectedModel = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"; // 超軽量モデル
+        // HTML1枚のまま別スレッド(Worker)を生成するためのインラインコード
+        const workerCode = `
+            import { WebWorkerMLCEngineHandler } from "https://esm.run/@mlc-ai/web-llm";
+            const handler = new WebWorkerMLCEngineHandler();
+            self.onmessage = (msg) => {
+                handler.onmessage(msg);
+            };
+        `;
+
+        function createOptimizedWorker() {
+            const blob = new Blob([workerCode], { type: "application/javascript" });
+            const workerUrl = URL.createObjectURL(blob);
+            return new Worker(workerUrl, { type: "module" });
+        }
+
         let engine = null;
         let isCached = false;
         const chatHistory = [];
@@ -379,18 +400,19 @@
                 cacheText.innerText = "非対応";
                 return;
             }
-            isCached = await webllm.hasModelInCache(selectedModel);
+            // 安定化設定(stableAppConfig)を指定してIndexedDB内のキャッシュを確認
+            isCached = await webllm.hasModelInCache(selectedModel, stableAppConfig);
             if (isCached) {
                 cacheBadge.className = "cache-badge cached";
                 cacheIcon.innerText = "⚡";
-                cacheText.innerText = "キャッシュ済 (通信不要)";
-                statusDiv.innerText = "モデルは端末に保存済みです。通信量なしで即座に起動できます。";
+                cacheText.innerText = "キャッシュ済 (IndexedDB)";
+                statusDiv.innerText = "モデルは端末ストレージに保存済みです。即座に起動できます。";
                 startBtn.innerText = "AIを起動する（オフライン可）";
             } else {
                 cacheBadge.className = "cache-badge not-cached";
                 cacheIcon.innerText = "☁️";
                 cacheText.innerText = "未ダウンロード";
-                statusDiv.innerText = "初回のみAIモデル（Qwen 0.5B / 約400MB）のダウンロードが必要です。";
+                statusDiv.innerText = "初回のみAIモデル（約400MB）のダウンロードが必要です。";
                 startBtn.innerText = "ダウンロードを許可して起動";
             }
             startBtn.style.display = "inline-block";
@@ -399,22 +421,35 @@
         startBtn.addEventListener("click", async () => {
             if (!isCached) {
                 const confirmed = confirm(
-                    "AIモデル（Qwen2.5 0.5B / 約400MB）をダウンロードします。\nWi-Fi環境での実行を推奨します。よろしいですか？"
+                    "AIモデル（Qwen2.5 0.5B / 約400MB）をIndexedDBにダウンロードします。\nよろしいですか？"
                 );
                 if (!confirmed) return;
             }
 
             startBtn.disabled = true;
             try {
-                engine = await webllm.CreateMLCEngine(selectedModel, {
-                    initProgressCallback: (p) => { statusDiv.innerText = `読み込み中: ${p.text}`; }
-                });
-
+                // 別スレッド(Web Worker)を生成してエンジンを初期化
+                const worker = createOptimizedWorker();
+                
+                engine = await webllm.CreateWebWorkerMLCEngine(
+                    worker,
+                    selectedModel,
+                    {
+                        appConfig: stableAppConfig,
+                        initProgressCallback: (p) => {
+                            statusDiv.innerText = `読み込み中: ${p.text}`;
+                        },
+                        // GPUバッファ溢れを防ぐためコンテキスト長を最小限に制限
+                        chatOpts: {
+                            context_window_size: 1024
+                        }
+                    }
+                );
 
                 cacheBadge.className = "cache-badge cached";
                 cacheIcon.innerText = "⚡";
-                cacheText.innerText = "キャッシュ済";
-                statusDiv.innerText = "✅ 準備完了！知識ベースを参照しながら英語で回答します。";
+                cacheText.innerText = "キャッシュ済 (最適化済)";
+                statusDiv.innerText = "✅ 準備完了！別スレッドで安定動作中です（英語限定）。";
                 startBtn.style.display = "none";
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -423,7 +458,7 @@
                 appendMessage("Hello! Ask me anything about the school festival, cafeteria, library, or Wi-Fi in English!", "assistant");
             } catch (error) {
                 console.error(error);
-                statusDiv.innerText = "エラー: モデルの読み込みに失敗しました。";
+                statusDiv.innerText = "起動エラー: " + error.message;
                 startBtn.disabled = false;
             }
         });
@@ -446,12 +481,13 @@
             const dynamicSystemPrompt = {
                 role: "system",
                 content: `You are a helpful English conversation assistant. You MUST reply ONLY in English, even if the user writes in Japanese.
-Use the following Reference Information to answer the user's question accurately.
+Use the following Reference Information to answer concisely.
 
 [Reference Information]
 ${contextText}`
             };
 
+            // メモリ負荷を抑えるため履歴は直近2往復（4メッセージ）に制限
             const recentHistory = chatHistory.slice(-4);
             const messagesToSend = [
                 dynamicSystemPrompt,
@@ -466,6 +502,7 @@ ${contextText}`
                     messages: messagesToSend,
                     stream: true,
                     temperature: 0.4,
+                    max_tokens: 150 // 一度のGPU演算量を制限して切断(DeviceLost)を防止
                 });
 
                 let fullReply = "";
@@ -479,11 +516,10 @@ ${contextText}`
                 chatHistory.push({ role: "user", content: text });
                 chatHistory.push({ role: "assistant", content: fullReply });
 
-                } catch (error) {
-                    console.error(error);
-                    // エラーの詳細なメッセージを画面の吹き出しに出力する
-                    assistantMsgSpan.innerText = "Error Details: " + error.message;
-                } finally {
+            } catch (error) {
+                console.error(error);
+                assistantMsgSpan.innerText = "Error Details: " + error.message;
+            } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
                 userInput.focus();
