@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ローカルAI 英会話チャット (GPU/CPU切替対応)</title>
+    <title>ローカルAI 英会話チャットver.asaka (Qwen 0.5B + RAG)</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -33,7 +33,6 @@
         }
         .cache-badge.cached { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
         .cache-badge.not-cached { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-        
         #control-panel {
             background: #fff;
             padding: 14px;
@@ -42,32 +41,7 @@
             margin-bottom: 12px;
             text-align: center;
         }
-        #status { font-size: 0.85rem; color: #555; margin-bottom: 12px; line-height: 1.4; }
-        
-        /* モード切替ボタングループ */
-        .mode-select-group {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-        .mode-btn {
-            flex: 1;
-            padding: 8px 12px;
-            border: 1px solid #cbd5e1;
-            background: #f8fafc;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            cursor: pointer;
-            font-weight: bold;
-            color: #475569;
-        }
-        .mode-btn.active {
-            background: #2563eb;
-            color: white;
-            border-color: #2563eb;
-        }
-
+        #status { font-size: 0.85rem; color: #555; margin-bottom: 10px; line-height: 1.4; }
         #start-btn {
             background: #10b981;
             color: white;
@@ -77,12 +51,10 @@
             font-size: 0.95rem;
             font-weight: bold;
             cursor: pointer;
-            width: 100%;
         }
         #start-btn:disabled { background: #9ca3af; cursor: not-allowed; }
-
         #chat-container {
-            height: 50vh;
+            height: 55vh;
             overflow-y: auto;
             background: #fff;
             border: 1px solid #ddd;
@@ -139,7 +111,7 @@
 <body>
 
     <header>
-        <h2>🤖 ローカルAI (GPU/CPU切替)</h2>
+        <h2>ローカルAI 英会話 ver,Asaka (Qwen 0.5B + RAG)</h2>
         <div id="cache-badge" class="cache-badge">
             <span id="cache-icon">⏳</span>
             <span id="cache-text">確認中...</span>
@@ -147,53 +119,249 @@
     </header>
 
     <div id="control-panel">
-        <div id="status">実行モードを選択してAIを起動してください。</div>
-        
-        <!-- 推論モード選択ボタン -->
-        <div class="mode-select-group" id="mode-group">
-            <button class="mode-btn active" data-app="webgpu">GPU推論 (高速)</button>
-            <button class="mode-btn" data-app="wasm">CPU推論 (安定・高互換)</button>
-        </div>
-
-        <button id="start-btn">AIを起動する</button>
+        <div id="status">端末内のAIモデルを確認しています...</div>
+        <button id="start-btn" style="display: none;">AIを起動する</button>
     </div>
 
     <div id="chat-container"></div>
 
     <div id="input-container">
-        <input type="text" id="user-input" placeholder="質問を英語で入力 (例: When is the festival?)" disabled>
+        <input type="text" id="user-input" placeholder="質問を英語で入力 (例: how are you?)" disabled>
         <button id="send-btn" disabled>送信</button>
     </div>
 
     <script type="module">
         import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
-        const selectedModel = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
-        let engine = null;
-        let selectedAppMode = "webgpu"; // デフォルトはGPU
-        const chatHistory = [];
-
-        // RAG用知識ベース
+        // ==========================================
+        // 1. RAG用の知識ベース
+        // ==========================================
         const knowledgeBase = [
-            { id: "event_date", text: "The annual school cultural festival (Sakura Festival) will be held on November 28 and 29, from 9:00 AM to 4:00 PM." },
-            { id: "cafeteria", text: "The school cafeteria is open from 11:30 AM to 1:30 PM. Today's special menu is Curry Rice for 400 yen." },
-            { id: "library", text: "The library is located on the 3rd floor of the main building. Students can borrow up to 5 books for 2 weeks." },
-            { id: "wifi", text: "Free campus Wi-Fi is available for students. The SSID is 'Campus_Guest' and the password is 'study2026'." }
+            {
+                id: "asaka_basic_01",
+                text: "Fukushima Prefectural Asaka High School is a public preparatory secondary institution located at 5-25-63 Kaisei, Koriyama City, Fukushima Prefecture, 963-8851, Japan."
+            },
+            {
+                id: "asaka_basic_02",
+                text: "The high school operates under standard high school code 07114F and official school code D107220360011."
+            },
+            {
+                id: "asaka_basic_03",
+                text: "The institution is commonly known by the pronunciation Asaka and the abbreviation Anko."
+            },
+            {
+                id: "asaka_basic_04",
+                text: "Asaka High School has educated over 36,000 graduates since its establishment."
+            },
+            {
+                id: "asaka_basic_05",
+                text: "The school holds an academic standard deviation score (hensachi) ranging between 68 and 70, representing top-tier academic standing in Fukushima Prefecture."
+            },
+            {
+                id: "asaka_basic_06",
+                text: "Originally established as an all-male institution, Asaka High School converted to a fully co-educational system in April 2001."
+            },
+            {
+                id: "asaka_basic_07",
+                text: "In April 2025, Fukushima Prefectural Asaka Junior High School was established on the same campus to form an integrated six-year secondary education system."
+            },
+            {
+                id: "asaka_philosophy_01",
+                text: "The core mottos of the school, known as the Asaka Spirit, consist of Bunbu Ryodo, Shitsujitsu Goken, and Kaitakusha Seishin."
+            },
+            {
+                id: "asaka_philosophy_02",
+                text: "Bunbu Ryodo emphasizes striving for academic excellence alongside dedication to athletic or extracurricular activities."
+            },
+            {
+                id: "asaka_philosophy_03",
+                text: "Shitsujitsu Goken encourages simplicity, fortitude, and moral as well as physical strength."
+            },
+            {
+                id: "asaka_philosophy_04",
+                text: "Kaitakusha Seishin fosters a pioneer spirit to develop proactive problem-solvers who drive social innovation."
+            },
+            {
+                id: "asaka_philosophy_05",
+                text: "The main educational goal of Asaka High School is to cultivate well-rounded individuals who hone intellect, virtue, and physical strength to contribute to humanity and shape future society."
+            },
+            {
+                id: "asaka_history_01",
+                text: "The school was originally founded on September 11, 1884, as Fukushima Prefectural Fukushima Middle School within the Fukushima Normal School campus, absorbing Nihonmatsu Middle School."
+            },
+            {
+                id: "asaka_history_02",
+                text: "In April 1889, the middle school moved to Kuwano Village, Asaka District (present-day Kuwano-machi, Koriyama City) following a political resolution placing the prefectural government in Fukushima City and the principal middle school in Koriyama."
+            },
+            {
+                id: "asaka_history_03",
+                text: "During the 1889 relocation, students and staff marched over 10 ri (approximately 40 kilometers) carrying luggage on their backs in traditional dark blue splashed-pattern clothing."
+            },
+            {
+                id: "asaka_history_04",
+                text: "The institution was officially renamed Fukushima Prefectural Asaka Middle School in 1901."
+            },
+            {
+                id: "asaka_history_05",
+                text: "Following post-WWII educational reforms in 1948, the school was reorganized as Fukushima Prefectural Asaka High School."
+            },
+            {
+                id: "asaka_history_06",
+                text: "In 1977, the Old Main Building of the school was designated as a National Important Cultural Property of Japan."
+            },
+            {
+                id: "asaka_history_07",
+                text: "To commemorate its 100th anniversary in 1984, the Old Main Building was formally opened as the Asaka History Museum."
+            },
+            {
+                id: "asaka_campus_01",
+                text: "The historic Old Main Building features white two-story wooden Meiji-era architecture with a balcony-style entrance."
+            },
+            {
+                id: "asaka_campus_02",
+                text: "Campus facilities include two indoor gymnasiums for athletic activities."
+            },
+            {
+                id: "asaka_campus_03",
+                text: "The school includes Asakano Hall, a specialized lecture auditorium capable of seating approximately 200 people."
+            },
+            {
+                id: "asaka_campus_04",
+                text: "Kuwano Library features a dedicated self-study hall accommodating nearly 100 students."
+            },
+            {
+                id: "asaka_academics_01",
+                text: "Asaka High School has been designated by MEXT as a Super Science High School (SSH) across multiple phases, including Phase I (2002–2006), Phase II (2019–2023), and Phase III (2024–2028)."
+            },
+            {
+                id: "asaka_academics_02",
+                text: "The SSH curriculum includes specialized inquiry courses such as SS Inquiry I focusing on regional creation and SS Inquiry II centered on global SDGs research."
+            },
+            {
+                id: "asaka_academics_03",
+                text: "SSH programs incorporate Tsukuba Science Tours, corporate academic internships, and joint international research collaborations with institutions in Thailand and Portugal."
+            },
+            {
+                id: "asaka_academics_04",
+                text: "The high school operates a credit-based system (tani-sei) and provides a dedicated Medical School Track (Igakubu Course)."
+            },
+            {
+                id: "asaka_academics_05",
+                text: "Admissions under the Fukushima Prefectural system evaluate applicants on a 500-point total, split evenly between 250 points for the academic examination and 250 points for internal school reports (naishin-ten)."
+            },
+            {
+                id: "asaka_academics_06",
+                text: "Internal school report evaluation weighs four practical non-academic subjects double, accounting for 195 points of the 250 internal report total."
+            },
+            {
+                id: "asaka_academics_07",
+                text: "Successful candidates typically achieve an academic entrance examination score between 210 and 220 or higher out of 250."
+            },
+            {
+                id: "asaka_alumni_literary_01",
+                text: "Asaka High School is one of only four high schools nationwide—alongside Hibiya, Kudan, and Azabu—to have produced three Akutagawa Prize-winning authors."
+            },
+            {
+                id: "asaka_alumni_literary_02",
+                text: "Yoshihide Nakayama was awarded the 7th Akutagawa Prize in 1938 for Atsumono Saki."
+            },
+            {
+                id: "asaka_alumni_literary_03",
+                text: "Kaoru Tounobe received the 18th Akutagawa Prize in 1943 for Washi."
+            },
+            {
+                id: "asaka_alumni_literary_04",
+                text: "Sokyu Genyu won the 125th Akutagawa Prize in 2001 for Chuin no Hana and serves as chief priest of Fukuju-ji Temple in Miharu Town."
+            },
+            {
+                id: "asaka_alumni_literary_05",
+                text: "Prominent early literary figures from the school include 1st-class alumnus Chogyu Takayama and novelist Masao Kume."
+            },
+            {
+                id: "asaka_alumni_literary_06",
+                text: "Other notable creative figures include Mishima Yukio Prize-winning author Hideo Furukawa, manga artist Sato Rokuro, and composer Joji Yuasa."
+            },
+            {
+                id: "asaka_alumni_leadership_01",
+                text: "Academic alumni include Yale University historian Kan'ichi Asakawa, Kyoto University Presidents Shinzo Shinjo and Shigenao Konishi, and Tohoku University President Teiji Tominaga."
+            },
+            {
+                id: "asaka_alumni_leadership_02",
+                text: "Prominent healthcare figures include otorhinolaryngology pioneer Inokichi Kubo and former World Medical Association President Eitaka Tsuboi."
+            },
+            {
+                id: "asaka_alumni_leadership_03",
+                text: "Public administration and political alumni include former Foreign Minister Koichiro Gemba, former Minister of Health, Labour and Welfare Takumi Nemoto, former Fukushima Governor Eisaku Sato, and former JASDF Chief of Staff Toshio Tamogami."
+            },
+            {
+                id: "asaka_extracurricular_01",
+                text: "Approximately 90% of enrolled students actively participate in extracurricular clubs."
+            },
+            {
+                id: "asaka_extracurricular_02",
+                text: "The Baseball Club participated in the 73rd National High School Baseball Invitational Tournament in 2001 via the 21st Century Selection Slot."
+            },
+            {
+                id: "asaka_extracurricular_03",
+                text: "The Chorus Club won the Minister of Education, Culture, Sports, Science and Technology Award at the 2010 National Competition."
+            },
+            {
+                id: "asaka_extracurricular_04",
+                text: "Active clubs include Rugby, Kendo, Handball, Brass Band, String Orchestra, Chemistry, Physics, Biology, Earth Science, Drama, and Shogi."
+            },
+            {
+                id: "asaka_events_01",
+                text: "Major school events include the Shikisai Festival (cultural festival held twice every five years), the annual Sports Festival, and the Road Race."
+            },
+            {
+                id: "asaka_events_02",
+                text: "Incoming freshmen participate in an intensive song orientation week led by the Cheering Squad (Oendan) to learn traditional school songs."
+            },
+            {
+                id: "asaka_media_01",
+                text: "The historic Asaka History Museum served as a location setting for NHK's drama Saka no Ue no Kumo, Fuji TV's Botchan (2016), and NHK's morning drama Yell (2020)."
+            },
+            {
+                id: "asaka_media_02",
+                text: "Asaka High School served as the visual school model for the television anime series Mikakunin de Shingoukei."
+            }
         ];
 
+        // ==========================================
+        // 2. 軽量検索関数（キーワードマッチング）
+        // ==========================================
         function retrieveRelevantDocs(query, topK = 2) {
             const stopWords = new Set(["the", "is", "are", "a", "an", "in", "on", "at", "to", "for", "of", "and", "or", "what", "when", "where", "how", "can", "i", "do", "does"]);
-            const queryWords = query.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w));
+            const queryWords = query
+                .toLowerCase()
+                .replace(/[^\w\s]/g, "")
+                .split(/\s+/)
+                .filter(w => w.length > 1 && !stopWords.has(w));
+
             if (queryWords.length === 0) return [];
+
             const scoredDocs = knowledgeBase.map(doc => {
+                const docTextLower = doc.text.toLowerCase();
                 let score = 0;
                 for (const word of queryWords) {
-                    if (doc.text.toLowerCase().includes(word)) score += 1;
+                    if (docTextLower.includes(word)) score += 1;
                 }
                 return { ...doc, score };
             });
-            return scoredDocs.filter(d => d.score > 0).sort((a, b) => b.score - a.score).slice(0, topK);
+
+            return scoredDocs
+                .filter(d => d.score > 0)
+                .sort((a, b) => b.score - a.score)
+                .slice(0, topK);
         }
+
+        // ==========================================
+        // 3. WebLLM 初期化・設定（Qwen2.5 0.5B）
+        // ==========================================
+        const selectedModel = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"; // 超軽量モデル
+        let engine = null;
+        let isCached = false;
+        const chatHistory = [];
 
         const cacheBadge = document.getElementById("cache-badge");
         const cacheIcon = document.getElementById("cache-icon");
@@ -203,73 +371,50 @@
         const chatContainer = document.getElementById("chat-container");
         const userInput = document.getElementById("user-input");
         const sendBtn = document.getElementById("send-btn");
-        const modeButtons = document.querySelectorAll(".mode-btn");
-
-        // モード切替のUI制御
-        modeButtons.forEach(btn => {
-            btn.addEventListener("click", () => {
-                modeButtons.forEach(b => b.classList.remove("active"));
-                btn.classList.add("active");
-                selectedAppMode = btn.getAttribute("data-app");
-                if (selectedAppMode === "wasm") {
-                    statusDiv.innerText = "CPUモード（WASM）が選択されました。GPUドライバに依存しないため、エラーが起きにくい安定したモードです。";
-                } else {
-                    statusDiv.innerText = "GPUモード（WebGPU）が選択されました。対応端末では高速に動作します。";
-                }
-            });
-        });
 
         async function checkCacheStatus() {
-            try {
-                const isCached = await webllm.hasModelInCache(selectedModel);
-                if (isCached) {
-                    cacheBadge.className = "cache-badge cached";
-                    cacheIcon.innerText = "⚡";
-                    cacheText.innerText = "キャッシュ済";
-                } else {
-                    cacheBadge.className = "cache-badge not-cached";
-                    cacheIcon.innerText = "☁️";
-                    cacheText.innerText = "未ダウンロード";
-                }
-            } catch (e) {
-                console.error(e);
+            if (!navigator.gpu) {
+                statusDiv.innerText = "エラー: お使いのブラウザはWebGPUに対応していません。";
+                cacheIcon.innerText = "❌";
+                cacheText.innerText = "非対応";
+                return;
             }
+            isCached = await webllm.hasModelInCache(selectedModel);
+            if (isCached) {
+                cacheBadge.className = "cache-badge cached";
+                cacheIcon.innerText = "⚡";
+                cacheText.innerText = "キャッシュ済 (通信不要)";
+                statusDiv.innerText = "モデルは端末に保存済みです。通信量なしで即座に起動できます。";
+                startBtn.innerText = "AIを起動する（オフライン可）";
+            } else {
+                cacheBadge.className = "cache-badge not-cached";
+                cacheIcon.innerText = "☁️";
+                cacheText.innerText = "未ダウンロード";
+                statusDiv.innerText = "初回のみAIモデル（Qwen 0.5B / 約400MB）のダウンロードが必要です。";
+                startBtn.innerText = "ダウンロードを許可して起動";
+            }
+            startBtn.style.display = "inline-block";
         }
 
         startBtn.addEventListener("click", async () => {
+            if (!isCached) {
+                const confirmed = confirm(
+                    "AIモデル（Qwen2.5 0.5B / 約400MB）をダウンロードします。\nWi-Fi環境での実行を推奨します。よろしいですか？"
+                );
+                if (!confirmed) return;
+            }
+
             startBtn.disabled = true;
-            document.getElementById("mode-group").style.display = "none";
-            statusDiv.innerText = `AIモデルをロード中 (${selectedAppMode.toUpperCase()} モード)... 初回は約400MBのダウンロードが発生します。`;
-
             try {
-                // appConfigでWebGPU(webgpu)かCPU(wasm)かを切り替える設定
-                const appConfig = {
-                    model_list: webllm.prebuiltAppConfig.model_list
-                };
-
-                // 選択されたモードに応じてエンジンの生成方法を分岐
-                const engineConfig = {
+                engine = await webllm.CreateMLCEngine(selectedModel, {
                     initProgressCallback: (p) => { statusDiv.innerText = `読み込み中: ${p.text}`; }
-                };
-
-                // WASM（CPU）指定の場合のオーバーライド
-                if (selectedAppMode === "wasm") {
-                    // WebLLMでCPU実行を指定する場合
-                    engineConfig.appConfig = {
-                        useIndexedDBCache: true,
-                    };
-                    // WASMバックエンドの強制指定
-                    engine = await webllm.CreateMLCEngine(selectedModel, engineConfig, { chatOpts: { temperature: 0.4 } });
-                } else {
-                    engine = await webllm.CreateMLCEngine(selectedModel, engineConfig);
-                }
+                });
 
                 cacheBadge.className = "cache-badge cached";
                 cacheIcon.innerText = "⚡";
-                cacheText.innerText = `起動中 (${selectedAppMode.toUpperCase()})`;
-                statusDiv.innerText = `✅ 準備完了！(${selectedAppMode.toUpperCase()} モードで動作中)`;
+                cacheText.innerText = "キャッシュ済";
+                statusDiv.innerText = "✅ 準備完了！知識ベースを参照しながら英語で回答します。";
                 startBtn.style.display = "none";
-
                 userInput.disabled = false;
                 sendBtn.disabled = false;
                 userInput.focus();
@@ -277,9 +422,8 @@
                 appendMessage("Hello! Ask me anything about the school festival, cafeteria, library, or Wi-Fi in English!", "assistant");
             } catch (error) {
                 console.error(error);
-                statusDiv.innerText = "エラー: 起動に失敗しました。CPUモードに切り替えてもう一度お試しください。\n詳細: " + error.message;
+                statusDiv.innerText = "エラー: モデルの読み込みに失敗しました。";
                 startBtn.disabled = false;
-                document.getElementById("mode-group").style.display = "flex";
             }
         });
 
@@ -296,19 +440,20 @@
             const relevantDocs = retrieveRelevantDocs(text, 2);
             const contextText = relevantDocs.length > 0
                 ? relevantDocs.map(d => `- ${d.text}`).join("\n")
-                : "No specific reference found.";
+                : "No specific reference found in the knowledge base.";
 
             const dynamicSystemPrompt = {
                 role: "system",
-                content: `You are a helpful English conversation assistant. You MUST reply ONLY in English.
-Use the following Reference Information:
+                content: `You are a helpful English conversation assistant. You MUST reply ONLY in English, even if the user writes in Japanese.
+Use the following Reference Information to answer the user's question accurately.
+
 [Reference Information]
 ${contextText}`
             };
 
             const recentHistory = chatHistory.slice(-4);
             const messagesToSend = [
-                dynamicSystemProgressFix = dynamicSystemPrompt,
+                dynamicSystemPrompt,
                 ...recentHistory,
                 { role: "user", content: text }
             ];
@@ -335,7 +480,7 @@ ${contextText}`
 
             } catch (error) {
                 console.error(error);
-                assistantMsgSpan.innerText = "Error: " + error.message;
+                assistantMsgSpan.innerText = "Sorry, an error occurred.";
             } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
