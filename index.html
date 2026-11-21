@@ -362,13 +362,6 @@
         let engine = null;
         let isCached = false;
         const chatHistory = [];
-        engine = await webllm.CreateMLCEngine(selectedModel, {
-            initProgressCallback: (p) => { statusDiv.innerText = `読み込み中: ${p.text}`; },
-            // キャッシュの読み込み挙動を安定させる
-            appConfig: {
-            useIndexedDB: true
-            }
-        });
 
         const cacheBadge = document.getElementById("cache-badge");
         const cacheIcon = document.getElementById("cache-icon");
@@ -416,6 +409,14 @@
                 engine = await webllm.CreateMLCEngine(selectedModel, {
                     initProgressCallback: (p) => { statusDiv.innerText = `読み込み中: ${p.text}`; }
                 });
+            engine = await webllm.CreateMLCEngine(selectedModel, {
+                initProgressCallback: (p) => { statusDiv.innerText = `読み込み中: ${p.text}`; },
+                // キャッシュの読み込み挙動を安定させる
+                appConfig: {
+                useIndexedDB: true
+                }
+            });
+
 
                 cacheBadge.className = "cache-badge cached";
                 cacheIcon.innerText = "⚡";
