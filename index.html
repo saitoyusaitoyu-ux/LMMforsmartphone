@@ -163,7 +163,7 @@
         <button id="btn-chat" class="mode-btn" onclick="switchMode('chat')">🤖 AIチャット</button>
     </div>
 
-    <!-- 1. ARモードセクション -->
+    <!-- 1. ARモードセクション（改変なし） -->
     <div id="ar-section" class="app-section active">
         <a-scene 
             id="ar-scene"
@@ -200,12 +200,12 @@
     <div id="chat-section" class="app-section">
         <div id="status">
             ☁️ 未ダウンロード <br>
-            <button id="init-btn" class="action-btn" style="margin-top: 8px; padding: 8px 16px;" onclick="startInitialization()">ダウンロードを許可して起動</button>
+            <button id="init-btn" class="action-btn" style="margin-top: 8px; padding: 8px 16px;">ダウンロードを許可して起動</button>
         </div>
         <div id="chat-container"></div>
         <div id="input-container">
             <input type="text" id="user-input" placeholder="メッセージを入力..." disabled>
-            <button id="send-btn" class="action-btn" onclick="sendMessage()" disabled>送信</button>
+            <button id="send-btn" class="action-btn" disabled>送信</button>
         </div>
     </div>
 
@@ -220,17 +220,18 @@
         const chatContainer = document.getElementById("chat-container");
         const userInput = document.getElementById("user-input");
         const sendBtn = document.getElementById("send-btn");
+        const initBtn = document.getElementById("init-btn");
         const arScene = document.getElementById("ar-scene");
 
         // 初回ロード時にARシステムを起動しておく
         arScene.addEventListener('loaded', () => {
             const arSystem = arScene.systems["mindar-image-system"];
             if (arSystem) {
-                arSystem.start(); // 初期状態（ARモード）でカメラ開始
+                arSystem.start();
             }
         });
 
-        // モード切り替え関数（カメラの開始・停止制御を追加）
+        // モード切り替え関数
         window.switchMode = function(mode) {
             const arSection = document.getElementById("ar-section");
             const chatSection = document.getElementById("chat-section");
@@ -245,7 +246,6 @@
                 btnAr.classList.add("active");
                 btnChat.classList.remove("active");
 
-                // ARモードに戻ったとき：カメラを再開
                 if (arSystem) {
                     arSystem.start();
                 }
@@ -255,7 +255,6 @@
                 btnAr.classList.remove("active");
                 btnChat.classList.add("active");
 
-                // チャットモードに移行したとき：カメラを停止
                 if (arSystem) {
                     arSystem.stop();
                 }
@@ -266,15 +265,13 @@
             window.dispatchEvent(new Event('resize'));
         };
 
-        // ユーザーの許可を得てからモデルのダウンロードと初期化を開始（エラー対策版）
-        window.startInitialization = async function() {
+        // ユーザーの許可を得てからモデルのダウンロードと初期化を開始
+        async function startInitialization() {
             if (!confirm("AIモデル（数GB）のダウンロードとブラウザへのキャッシュ保存を開始しますか？")) {
                 return;
             }
 
-            const initBtn = document.getElementById("init-btn");
             if (initBtn) initBtn.style.display = "none";
-
             statusDiv.innerText = "システムを初期化中...（しばらくお待ちください）";
 
             try {
@@ -282,7 +279,6 @@
                     statusDiv.innerText = progress.text;
                 };
 
-                // WebLLMの初期化オプションにアプリコット環境のエラーを防ぐ設定を追加
                 engine = await webllm.CreateMLCEngine(
                     selectedModel,
                     { initProgressCallback: initProgressCallback }
@@ -298,10 +294,15 @@
                 if(initBtn) initBtn.style.display = "inline-block";
                 console.error(error);
             }
-        };
+        }
 
-        // メッセージ送信・ストリーミング処理
-        window.sendMessage = async function() {
+        // ボタンのクリックイベントを確実に紐付け
+        if (initBtn) {
+            initBtn.addEventListener("click", startInitialization);
+        }
+
+        // メッセージ送信関数
+        async function sendMessage() {
             const text = userInput.value.trim();
             if (!text || !engine) return;
 
@@ -338,7 +339,10 @@
                 sendBtn.disabled = false;
                 userInput.focus();
             }
-        };
+        }
+
+        // 送信ボタンのイベント紐付け
+        sendBtn.addEventListener("click", sendMessage);
 
         function appendMessage(text, sender) {
             const msgDiv = document.createElement("div");
@@ -359,3 +363,4 @@
     </script>
 </body>
 </html>
+```[cite: 1, 2]
