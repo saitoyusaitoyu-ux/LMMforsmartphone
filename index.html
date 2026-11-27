@@ -3,13 +3,14 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>WebAR GLB Viewer</title>
+    <title>WebAR QR Marker Tracking</title>
     
-    <!-- A-Frame（安定版 1.5.0） -->
+    <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <!-- MindAR for A-Frame -->
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
     
     <style>
-      /* 画面の余白やスクロールを完全に防ぎ、全画面に表示するスタイル */
       body, html {
         margin: 0;
         padding: 0;
@@ -22,30 +23,34 @@
   </head>
   <body>
     
-    <!-- A-Frame シーン開始 -->
+    <!-- MindAR と A-Frame を組み合わせたシーン設定 -->
     <a-scene 
-      embedded 
-      renderer="colorManagement: true, physicallyCorrectLights: true"
-      vr-mode-ui="enabled: false"
+      mindar-image="imageTargetSrc: ./targets.mind;" 
+      color-space="sRGB" 
+      renderer="colorManagement: true, physicallyCorrectLights: true" 
+      vr-mode-ui="enabled: false" 
       device-orientation-permission-ui="enabled: true">
       
-      <!-- アセット（モデルの事前読み込み） -->
+      <!-- アセット（GLBモデルの事前読み込み） -->
       <a-assets>
         <a-asset-item id="modelFile" src="./model.glb"></a-asset-item>
       </a-assets>
 
       <!-- カメラ -->
-      <a-camera position="0 1.6 0" look-controls="enabled: false"></a-camera>
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <!-- 3Dモデル（カメラ前方 1.5m の位置に配置） -->
-      <a-entity 
-        gltf-model="#modelFile" 
-        position="0 0 -1.5" 
-        rotation="0 0 0" 
-        scale="1 1 1">
+      <!-- ターゲット画像（0番目のマーカー）が認識された時のコンテナ -->
+      <a-entity mindar-image-target="targetIndex: 0">
+        <!-- QRコードの上に表示するGLBモデル -->
+        <a-entity 
+          gltf-model="#modelFile" 
+          position="0 0 0" 
+          rotation="0 0 0" 
+          scale="0.5 0.5 0.5">
+        </a-entity>
       </a-entity>
 
-      <!-- ライティング（モデルが暗くならないように調整） -->
+      <!-- ライティング -->
       <a-light type="ambient" color="#ffffff" intensity="1.2"></a-light>
       <a-light type="directional" position="1 2 1" intensity="0.8"></a-light>
 
