@@ -5,9 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>WebAR & Local AI Chat Integrated App</title>
     
-    <!-- A-Frame & MindAR -->
+    <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
     
     <style>
         body, html {
@@ -70,7 +69,7 @@
         #chat-section {
             background-color: #f7f7f8;
             color: #333;
-            padding: 70px 16px 16px 16px; /* 上部タブの分だけ余白を空ける */
+            padding: 70px 16px 16px 16px;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
@@ -81,7 +80,7 @@
             font-size: 0.85rem;
             color: #666;
             margin-bottom: 12px;
-            padding: 8px;
+            padding: 12px;
             background: #fff;
             border-radius: 8px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -132,7 +131,7 @@
             font-size: 1rem;
             outline: none;
         }
-        #send-btn {
+        .action-btn {
             background: #007aff;
             color: white;
             border: none;
@@ -141,7 +140,7 @@
             font-size: 1rem;
             cursor: pointer;
         }
-        #send-btn:disabled { background: #99c2ff; cursor: not-allowed; }
+        .action-btn:disabled { background: #99c2ff; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -155,25 +154,21 @@
     <!-- 1. ARモードセクション -->
     <div id="ar-section" class="app-section active">
         <a-scene 
-            mindar-image="imageTargetSrc: ./targets.mind;" 
-            color-space="sRGB" 
+            embedded
             renderer="colorManagement: true, physicallyCorrectLights: true" 
-            vr-mode-ui="enabled: false" 
-            device-orientation-permission-ui="enabled: true">
+            vr-mode-ui="enabled: false">
             
             <a-assets>
                 <a-asset-item id="modelFile" src="./model.glb"></a-asset-item>
             </a-assets>
 
-            <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+            <a-camera position="0 1.6 0" look-controls="enabled: false"></a-camera>
 
-            <a-entity mindar-image-target="targetIndex: 0">
-                <a-entity 
-                    gltf-model="#modelFile" 
-                    position="0 0 0" 
-                    rotation="0 0 0" 
-                    scale="0.5 0.5 0.5">
-                </a-entity>
+            <a-entity 
+                gltf-model="#modelFile" 
+                position="0 0 -1.5" 
+                rotation="0 0 0" 
+                scale="1 1 1">
             </a-entity>
 
             <a-light type="ambient" color="#ffffff" intensity="1.2"></a-light>
@@ -183,15 +178,18 @@
 
     <!-- 2. AIチャットモードセクション -->
     <div id="chat-section" class="app-section">
-        <div id="status">システムを初期化中...（初回はAIモデルのダウンロードに数分かかります）</div>
+        <div id="status">
+            ☁️ 未ダウンロード <br>
+            <button id="init-btn" class="action-btn" style="margin-top: 8px; padding: 8px 16px;" onclick="startInitialization()">ダウンロードを許可して起動</button>
+        </div>
         <div id="chat-container"></div>
         <div id="input-container">
             <input type="text" id="user-input" placeholder="メッセージを入力..." disabled>
-            <button id="send-btn" onclick="sendMessage()" disabled>送信</button>
+            <button id="send-btn" class="action-btn" onclick="sendMessage()" disabled>送信</button>
         </div>
     </div>
 
-    <!-- WebLLM & モード切り替えスクリプト -->
+    <!-- スクリプト -->
     <script type="module">
         import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
@@ -203,7 +201,7 @@
         const userInput = document.getElementById("user-input");
         const sendBtn = document.getElementById("send-btn");
 
-        // モード切り替え関数をグローバルに定義
+        // モード切り替え関数
         window.switchMode = function(mode) {
             const arSection = document.getElementById("ar-section");
             const chatSection = document.getElementById("chat-section");
@@ -223,8 +221,17 @@
             }
         };
 
-        // WebLLM 初期化処理
-        async function initializeChat() {
+        // ユーザーの許可を得てからモデルのダウンロードと初期化を開始
+        window.startInitialization = async function() {
+            if (!confirm("AIモデル（数GB）のダウンロードとブラウザへのキャッシュ保存を開始しますか？")) {
+                return;
+            }
+
+            const initBtn = document.getElementById("init-btn");
+            if (initBtn) initBtn.style.display = "none";
+
+            statusDiv.innerText = "システムを初期化中...";
+
             try {
                 const initProgressCallback = (progress) => {
                     statusDiv.innerText = progress.text;
@@ -235,7 +242,7 @@
                     { initProgressCallback: initProgressCallback }
                 );
 
-                statusDiv.innerText = "準備完了！AIとチャットできます（完全ローカル動作）";
+                statusDiv.innerText = "⚡ 準備完了！AIとチャットできます（キャッシュ済）";
                 statusDiv.style.backgroundColor = "#e1f5fe";
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -244,9 +251,7 @@
                 statusDiv.style.backgroundColor = "#ffebee";
                 console.error(error);
             }
-        }
-
-        initializeChat();
+        };
 
         // メッセージ送信・ストリーミング処理
         window.sendMessage = async function() {
@@ -307,11 +312,4 @@
     </script>
 </body>
 </html>
-```[cite: 1, 2]
-
----
-
-### 🚀 導入・確認の手順
-1. リポジトリのルートフォルダに上記の `index.html` を配置します。
-2. 同階層に `model.glb` と `targets.mind` が揃っていることを確認します[cite: 1, 2]。
-3. GitHubへプッシュしてGitHub Pagesを更新すると、スマホのブラウザ上で「ARモード（QRコード認識）」と「AIチャットモード」を上部のボタン一つで切り替えて遊べるようになります[cite: 1, 2]。
+```[cite: 1]
