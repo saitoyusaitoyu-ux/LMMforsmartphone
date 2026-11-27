@@ -1,68 +1,317 @@
 <!DOCTYPE html>
-<html>
-  <head>
+<html lang="ja">
+<head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>WebAR QR Vertical Model</title>
+    <title>WebAR & Local AI Chat Integrated App</title>
     
-    <!-- A-Frame -->
+    <!-- A-Frame & MindAR -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <!-- MindAR for A-Frame -->
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
     
     <style>
-      /* 背景を透明（transparent）にし、カメラ映像が透過して見えるようにする */
-      body, html {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background-color: transparent;
-      }
-      /* MindARが自動生成するカメラ映像（video）を最背面に配置 */
-      video {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        z-index: -2;
-      }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #000;
+        }
+
+        /* モード切り替えタブのデザイン */
+        #mode-switcher {
+            position: fixed;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 99999;
+            display: flex;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 4px;
+            border-radius: 24px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            backdrop-filter: blur(5px);
+        }
+
+        .mode-btn {
+            background: transparent;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: #333;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .mode-btn.active {
+            background: #007aff;
+            color: white;
+        }
+
+        /* 各セクションの表示・非表示切り替え用コンテナ */
+        .app-section {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+        }
+
+        .app-section.active {
+            display: block;
+        }
+
+        /* チャットモード時のUIスタイル */
+        #chat-section {
+            background-color: #f7f7f8;
+            color: #333;
+            padding: 70px 16px 16px 16px; /* 上部タブの分だけ余白を空ける */
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #status {
+            text-align: center;
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 12px;
+            padding: 8px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        #chat-container {
+            flex: 1;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .message {
+            margin-bottom: 12px;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+        .message.user { text-align: right; }
+        .message.user span {
+            background: #007aff;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 16px 16px 0 16px;
+            display: inline-block;
+            text-align: left;
+        }
+        .message.assistant span {
+            background: #e5e5ea;
+            color: #000;
+            padding: 8px 12px;
+            border-radius: 16px 16px 16px 0;
+            display: inline-block;
+        }
+
+        #input-container {
+            display: flex;
+            gap: 8px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #ccc;
+            border-radius: 24px;
+            font-size: 1rem;
+            outline: none;
+        }
+        #send-btn {
+            background: #007aff;
+            color: white;
+            border: none;
+            padding: 0 18px;
+            border-radius: 24px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        #send-btn:disabled { background: #99c2ff; cursor: not-allowed; }
     </style>
-  </head>
-  <body>
-    
-    <!-- alpha: true を指定して3D空間の背景を透明化 -->
-    <a-scene 
-      mindar-image="imageTargetSrc: ./targets.mind;" 
-      color-space="sRGB" 
-      renderer="colorManagement: true, physicallyCorrectLights: true, alpha: true" 
-      vr-mode-ui="enabled: false" 
-      device-orientation-permission-ui="enabled: true">
-      
-      <a-assets>
-        <a-asset-item id="modelFile" src="./model.glb"></a-asset-item>
-      </a-assets>
+</head>
+<body>
 
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+    <!-- 画面上部のモード切り替えタブ -->
+    <div id="mode-switcher">
+        <button id="btn-ar" class="mode-btn active" onclick="switchMode('ar')">📷 ARモード</button>
+        <button id="btn-chat" class="mode-btn" onclick="switchMode('chat')">🤖 AIチャット</button>
+    </div>
 
-      <!-- QRコード（ターゲット0番）認識時に出現するコンテナ -->
-      <a-entity mindar-image-target="targetIndex: 0">
-        <!-- rotation="90 0 0" で机上のQRコードに対して垂直に直立させる -->
-        <a-entity 
-          gltf-model="#modelFile" 
-          position="0 0 0" 
-          rotation="90 0 0" 
-          scale="0.6 0.6 0.6">
-        </a-entity>
-      </a-entity>
+    <!-- 1. ARモードセクション -->
+    <div id="ar-section" class="app-section active">
+        <a-scene 
+            mindar-image="imageTargetSrc: ./targets.mind;" 
+            color-space="sRGB" 
+            renderer="colorManagement: true, physicallyCorrectLights: true" 
+            vr-mode-ui="enabled: false" 
+            device-orientation-permission-ui="enabled: true">
+            
+            <a-assets>
+                <a-asset-item id="modelFile" src="./model.glb"></a-asset-item>
+            </a-assets>
 
-      <a-light type="ambient" color="#ffffff" intensity="1.3"></a-light>
-      <a-light type="directional" position="1 2 1" intensity="0.9"></a-light>
+            <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-    </a-scene>
+            <a-entity mindar-image-target="targetIndex: 0">
+                <a-entity 
+                    gltf-model="#modelFile" 
+                    position="0 0 0" 
+                    rotation="0 0 0" 
+                    scale="0.5 0.5 0.5">
+                </a-entity>
+            </a-entity>
 
-  </body>
+            <a-light type="ambient" color="#ffffff" intensity="1.2"></a-light>
+            <a-light type="directional" position="1 2 1" intensity="0.8"></a-light>
+        </a-scene>
+    </div>
+
+    <!-- 2. AIチャットモードセクション -->
+    <div id="chat-section" class="app-section">
+        <div id="status">システムを初期化中...（初回はAIモデルのダウンロードに数分かかります）</div>
+        <div id="chat-container"></div>
+        <div id="input-container">
+            <input type="text" id="user-input" placeholder="メッセージを入力..." disabled>
+            <button id="send-btn" onclick="sendMessage()" disabled>送信</button>
+        </div>
+    </div>
+
+    <!-- WebLLM & モード切り替えスクリプト -->
+    <script type="module">
+        import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+
+        let engine = null;
+        const selectedModel = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+
+        const statusDiv = document.getElementById("status");
+        const chatContainer = document.getElementById("chat-container");
+        const userInput = document.getElementById("user-input");
+        const sendBtn = document.getElementById("send-btn");
+
+        // モード切り替え関数をグローバルに定義
+        window.switchMode = function(mode) {
+            const arSection = document.getElementById("ar-section");
+            const chatSection = document.getElementById("chat-section");
+            const btnAr = document.getElementById("btn-ar");
+            const btnChat = document.getElementById("btn-chat");
+
+            if (mode === 'ar') {
+                arSection.classList.add("active");
+                chatSection.classList.remove("active");
+                btnAr.classList.add("active");
+                btnChat.classList.remove("active");
+            } else {
+                arSection.classList.remove("active");
+                chatSection.classList.add("active");
+                btnAr.classList.remove("active");
+                btnChat.classList.add("active");
+            }
+        };
+
+        // WebLLM 初期化処理
+        async function initializeChat() {
+            try {
+                const initProgressCallback = (progress) => {
+                    statusDiv.innerText = progress.text;
+                };
+
+                engine = await webllm.CreateMLCEngine(
+                    selectedModel,
+                    { initProgressCallback: initProgressCallback }
+                );
+
+                statusDiv.innerText = "準備完了！AIとチャットできます（完全ローカル動作）";
+                statusDiv.style.backgroundColor = "#e1f5fe";
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+            } catch (error) {
+                statusDiv.innerText = "エラー: WebGPUが未対応か、メモリ不足の可能性があります。";
+                statusDiv.style.backgroundColor = "#ffebee";
+                console.error(error);
+            }
+        }
+
+        initializeChat();
+
+        // メッセージ送信・ストリーミング処理
+        window.sendMessage = async function() {
+            const text = userInput.value.trim();
+            if (!text || !engine) return;
+
+            userInput.value = "";
+            userInput.disabled = true;
+            sendBtn.disabled = true;
+
+            appendMessage(text, "user");
+            const assistantMsgSpan = appendMessage("", "assistant");
+
+            try {
+                const messages = [
+                    { role: "system", content: "あなたは親切で丁寧なAIアシスタントです。自然な日本語で回答してください。" },
+                    { role: "user", content: text }
+                ];
+
+                const replyStream = await engine.chat.completions.create({
+                    messages: messages,
+                    stream: true,
+                });
+
+                let fullReply = "";
+                for await (const chunk of replyStream) {
+                    const delta = chunk.choices[0]?.delta?.content || "";
+                    fullReply += delta;
+                    assistantMsgSpan.innerText = fullReply;
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+            } catch (error) {
+                assistantMsgSpan.innerText = "エラーが発生しました。";
+                console.error(error);
+            } finally {
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+                userInput.focus();
+            }
+        };
+
+        function appendMessage(text, sender) {
+            const msgDiv = document.createElement("div");
+            msgDiv.className = `message ${sender}`;
+            const span = document.createElement("span");
+            span.innerText = text;
+            msgDiv.appendChild(span);
+            chatContainer.appendChild(msgDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return span;
+        }
+
+        userInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter" && !sendBtn.disabled) {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
 </html>
+```[cite: 1, 2]
+
+---
+
+### 🚀 導入・確認の手順
+1. リポジトリのルートフォルダに上記の `index.html` を配置します。
+2. 同階層に `model.glb` と `targets.mind` が揃っていることを確認します[cite: 1, 2]。
+3. GitHubへプッシュしてGitHub Pagesを更新すると、スマホのブラウザ上で「ARモード（QRコード認識）」と「AIチャットモード」を上部のボタン一つで切り替えて遊べるようになります[cite: 1, 2]。
