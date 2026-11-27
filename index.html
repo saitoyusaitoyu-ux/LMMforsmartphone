@@ -14,24 +14,23 @@
       vr-mode-ui="enabled: false">
       
       <a-assets>
-        <!-- ※あらかじめBlender等で変換した model.glb を同じ階層に置いてください -->
         <a-asset-item id="modelFile" src="./model.glb"></a-asset-item>
       </a-assets>
 
-      <!-- カメラ -->
+      <!-- スマホのカメラ映像を背景として起動させる設定 -->
       <a-camera position="0 1.6 0" look-controls="enabled: false"></a-camera>
 
-      <!-- 3Dモデルの配置 -->
+      <!-- 3Dモデルの配置（カメラの正面） -->
       <a-entity 
         gltf-model="#modelFile" 
         position="0 0 -1.5" 
-        rotation="0 0 0" 
+        rotation="0 0 180" 
         scale="1 1 1">
       </a-entity>
 
       <!-- ライト -->
-      <a-light type="ambient" color="#ffffff" intensity="1.0"></a-light>
-      <a-light type="directional" position="1 2 1" intensity="0.5"></a-light>
+      <a-light type="ambient" color="#ffffff" intensity="1.2"></a-light>
+      <a-light type="directional" position="1 2 1" intensity="0.8"></a-light>
 
     </a-scene>
 
