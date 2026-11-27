@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>WebAR & Local AI Chat Integrated App</title>
     
-    <!-- A-Frame & MindAR -->
+    <!-- A-Frame & MindAR (ARモード関連は一切改変なし) -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
     
@@ -67,7 +67,7 @@
             display: block;
         }
 
-        /* ARモード時は背景を透明にしてカメラ映像を映す */
+        /* ARモード時は背景を透明にしてカメラ映像を映す（改変なし） */
         #ar-section {
             background-color: transparent;
             z-index: 1;
@@ -166,8 +166,7 @@
     <!-- 1. ARモードセクション（改変なし） -->
     <div id="ar-section" class="app-section active">
         <a-scene 
-            id="ar-scene"
-            mindar-image="imageTargetSrc: ./targets.mind; autoStart: false;" 
+            mindar-image="imageTargetSrc: ./targets.mind;" 
             color-space="sRGB" 
             renderer="colorManagement: true, physicallyCorrectLights: true, alpha: true" 
             vr-mode-ui="enabled: false" 
@@ -180,9 +179,7 @@
 
             <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-            <!-- QRコード（ターゲット0番）認識時に出現するエンティティ -->
             <a-entity mindar-image-target="targetIndex: 0">
-                <!-- rotation="90 0 0" でQRコードに対して垂直に直立させる -->
                 <a-entity 
                     gltf-model="#modelFile" 
                     position="0 0 0" 
@@ -199,7 +196,7 @@
     <!-- 2. AIチャットモードセクション -->
     <div id="chat-section" class="app-section">
         <div id="status">
-            ☁️ 未ダウンロード <br>
+            ☁️ AIモデル未ダウンロード <br>
             <button id="init-btn" class="action-btn" style="margin-top: 8px; padding: 8px 16px;">ダウンロードを許可して起動</button>
         </div>
         <div id="chat-container"></div>
@@ -221,15 +218,6 @@
         const userInput = document.getElementById("user-input");
         const sendBtn = document.getElementById("send-btn");
         const initBtn = document.getElementById("init-btn");
-        const arScene = document.getElementById("ar-scene");
-
-        // 初回ロード時にARシステムを起動しておく
-        arScene.addEventListener('loaded', () => {
-            const arSystem = arScene.systems["mindar-image-system"];
-            if (arSystem) {
-                arSystem.start();
-            }
-        });
 
         // モード切り替え関数
         window.switchMode = function(mode) {
@@ -237,31 +225,19 @@
             const chatSection = document.getElementById("chat-section");
             const btnAr = document.getElementById("btn-ar");
             const btnChat = document.getElementById("btn-chat");
-            
-            const arSystem = arScene.systems["mindar-image-system"];
 
             if (mode === 'ar') {
                 arSection.classList.add("active");
                 chatSection.classList.remove("active");
                 btnAr.classList.add("active");
                 btnChat.classList.remove("active");
-
-                if (arSystem) {
-                    arSystem.start();
-                }
             } else {
                 arSection.classList.remove("active");
                 chatSection.classList.add("active");
                 btnAr.classList.remove("active");
                 btnChat.classList.add("active");
-
-                if (arSystem) {
-                    arSystem.stop();
-                }
-                
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             }
-
             window.dispatchEvent(new Event('resize'));
         };
 
@@ -272,7 +248,7 @@
             }
 
             if (initBtn) initBtn.style.display = "none";
-            statusDiv.innerText = "システムを初期化中...（しばらくお待ちください）";
+            statusDiv.innerText = "AIモデルをダウンロード・初期化中...（数分かかる場合があります）";
 
             try {
                 const initProgressCallback = (progress) => {
@@ -289,19 +265,19 @@
                 userInput.disabled = false;
                 sendBtn.disabled = false;
             } catch (error) {
-                statusDiv.innerText = "初期化エラー: WebGPU対応ブラウザか、デバイスのメモリ不足を確認してください。";
+                statusDiv.innerText = "初期化エラー: WebGPU対応ブラウザか、メモリ不足の可能性があります。";
                 statusDiv.style.backgroundColor = "#ffebee";
                 if(initBtn) initBtn.style.display = "inline-block";
                 console.error(error);
             }
         }
 
-        // ボタンのクリックイベントを確実に紐付け
+        // ダウンロードボタンのクリックイベントを確実に紐付け
         if (initBtn) {
             initBtn.addEventListener("click", startInitialization);
         }
 
-        // メッセージ送信関数
+        // メッセージ送信処理
         async function sendMessage() {
             const text = userInput.value.trim();
             if (!text || !engine) return;
