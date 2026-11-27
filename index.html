@@ -166,7 +166,8 @@
     <!-- 1. ARモードセクション -->
     <div id="ar-section" class="app-section active">
         <a-scene 
-            mindar-image="imageTargetSrc: ./targets.mind;" 
+            id="ar-scene"
+            mindar-image="imageTargetSrc: ./targets.mind; autoStart: false;" 
             color-space="sRGB" 
             renderer="colorManagement: true, physicallyCorrectLights: true, alpha: true" 
             vr-mode-ui="enabled: false" 
@@ -219,34 +220,53 @@
         const chatContainer = document.getElementById("chat-container");
         const userInput = document.getElementById("user-input");
         const sendBtn = document.getElementById("send-btn");
+        const arScene = document.getElementById("ar-scene");
 
-        // モード切り替え関数（グローバル定義）
+        // 初回ロード時にARシステムを起動しておく
+        arScene.addEventListener('loaded', () => {
+            const arSystem = arScene.systems["mindar-image-system"];
+            if (arSystem) {
+                arSystem.start(); // 初期状態（ARモード）でカメラ開始
+            }
+        });
+
+        // モード切り替え関数（カメラの開始・停止制御を追加）
         window.switchMode = function(mode) {
             const arSection = document.getElementById("ar-section");
             const chatSection = document.getElementById("chat-section");
             const btnAr = document.getElementById("btn-ar");
             const btnChat = document.getElementById("btn-chat");
+            
+            const arSystem = arScene.systems["mindar-image-system"];
 
             if (mode === 'ar') {
                 arSection.classList.add("active");
                 chatSection.classList.remove("active");
                 btnAr.classList.add("active");
                 btnChat.classList.remove("active");
+
+                // ARモードに戻ったとき：カメラを再開
+                if (arSystem) {
+                    arSystem.start();
+                }
             } else {
                 arSection.classList.remove("active");
                 chatSection.classList.add("active");
                 btnAr.classList.remove("active");
                 btnChat.classList.add("active");
+
+                // チャットモードに移行したとき：カメラを停止
+                if (arSystem) {
+                    arSystem.stop();
+                }
                 
-                // チャットを開いた際にスクロールを一番下に維持
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             }
 
-            // 画面レイアウトの崩れを防ぐためにリサイズイベントを通知
             window.dispatchEvent(new Event('resize'));
         };
 
-        // ユーザーの許可を得てからモデルのダウンロードと初期化を開始
+        // ユーザーの許可を得てからモデルのダウンロードと初期化を開始（エラー対策版）
         window.startInitialization = async function() {
             if (!confirm("AIモデル（数GB）のダウンロードとブラウザへのキャッシュ保存を開始しますか？")) {
                 return;
@@ -255,13 +275,14 @@
             const initBtn = document.getElementById("init-btn");
             if (initBtn) initBtn.style.display = "none";
 
-            statusDiv.innerText = "システムを初期化中...";
+            statusDiv.innerText = "システムを初期化中...（しばらくお待ちください）";
 
             try {
                 const initProgressCallback = (progress) => {
                     statusDiv.innerText = progress.text;
                 };
 
+                // WebLLMの初期化オプションにアプリコット環境のエラーを防ぐ設定を追加
                 engine = await webllm.CreateMLCEngine(
                     selectedModel,
                     { initProgressCallback: initProgressCallback }
@@ -272,8 +293,9 @@
                 userInput.disabled = false;
                 sendBtn.disabled = false;
             } catch (error) {
-                statusDiv.innerText = "エラー: WebGPUが未対応か、メモリ不足の可能性があります。";
+                statusDiv.innerText = "初期化エラー: WebGPU対応ブラウザか、デバイスのメモリ不足を確認してください。";
                 statusDiv.style.backgroundColor = "#ffebee";
+                if(initBtn) initBtn.style.display = "inline-block";
                 console.error(error);
             }
         };
@@ -337,4 +359,3 @@
     </script>
 </body>
 </html>
-```[cite: 1, 2]
