@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>WebAR & Local AI Chat Integrated App</title>
     
-    <!-- A-Frame -->
+    <!-- A-Frame & MindAR -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
     
     <style>
         body, html {
@@ -65,14 +66,23 @@
             display: block;
         }
 
+        /* ARモード時の背景透過設定 */
+        #ar-section {
+            background-color: transparent;
+        }
+
         /* チャットモード時のUIスタイル */
         #chat-section {
             background-color: #f7f7f8;
             color: #333;
             padding: 70px 16px 16px 16px;
             box-sizing: border-box;
-            display: flex;
+            display: none;
             flex-direction: column;
+        }
+
+        #chat-section.active {
+            display: flex;
         }
 
         #status {
@@ -151,24 +161,31 @@
         <button id="btn-chat" class="mode-btn" onclick="switchMode('chat')">🤖 AIチャット</button>
     </div>
 
-    <!-- 1. ARモードセクション -->
+    <!-- 1. ARモードセクション（カメラ背景＋QRコード認識＋垂直モデル表示） -->
     <div id="ar-section" class="app-section active">
         <a-scene 
-            embedded
-            renderer="colorManagement: true, physicallyCorrectLights: true" 
-            vr-mode-ui="enabled: false">
+            mindar-image="imageTargetSrc: ./targets.mind;" 
+            color-space="sRGB" 
+            renderer="colorManagement: true, physicallyCorrectLights: true, alpha: true" 
+            vr-mode-ui="enabled: false" 
+            device-orientation-permission-ui="enabled: true"
+            embedded>
             
             <a-assets>
                 <a-asset-item id="modelFile" src="./model.glb"></a-asset-item>
             </a-assets>
 
-            <a-camera position="0 1.6 0" look-controls="enabled: false"></a-camera>
+            <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-            <a-entity 
-                gltf-model="#modelFile" 
-                position="0 0 -1.5" 
-                rotation="0 0 0" 
-                scale="1 1 1">
+            <!-- QRコード（ターゲット0番）認識時に出現するコンテナ -->
+            <a-entity mindar-image-target="targetIndex: 0">
+                <!-- rotation="90 0 0" でQRコードに対して垂直に直立させる -->
+                <a-entity 
+                    gltf-model="#modelFile" 
+                    position="0 0 0" 
+                    rotation="90 0 0" 
+                    scale="0.5 0.5 0.5">
+                </a-entity>
             </a-entity>
 
             <a-light type="ambient" color="#ffffff" intensity="1.2"></a-light>
@@ -214,102 +231,4 @@
                 btnAr.classList.add("active");
                 btnChat.classList.remove("active");
             } else {
-                arSection.classList.remove("active");
-                chatSection.classList.add("active");
-                btnAr.classList.remove("active");
-                btnChat.classList.add("active");
-            }
-        };
-
-        // ユーザーの許可を得てからモデルのダウンロードと初期化を開始
-        window.startInitialization = async function() {
-            if (!confirm("AIモデル（数GB）のダウンロードとブラウザへのキャッシュ保存を開始しますか？")) {
-                return;
-            }
-
-            const initBtn = document.getElementById("init-btn");
-            if (initBtn) initBtn.style.display = "none";
-
-            statusDiv.innerText = "システムを初期化中...";
-
-            try {
-                const initProgressCallback = (progress) => {
-                    statusDiv.innerText = progress.text;
-                };
-
-                engine = await webllm.CreateMLCEngine(
-                    selectedModel,
-                    { initProgressCallback: initProgressCallback }
-                );
-
-                statusDiv.innerText = "⚡ 準備完了！AIとチャットできます（キャッシュ済）";
-                statusDiv.style.backgroundColor = "#e1f5fe";
-                userInput.disabled = false;
-                sendBtn.disabled = false;
-            } catch (error) {
-                statusDiv.innerText = "エラー: WebGPUが未対応か、メモリ不足の可能性があります。";
-                statusDiv.style.backgroundColor = "#ffebee";
-                console.error(error);
-            }
-        };
-
-        // メッセージ送信・ストリーミング処理
-        window.sendMessage = async function() {
-            const text = userInput.value.trim();
-            if (!text || !engine) return;
-
-            userInput.value = "";
-            userInput.disabled = true;
-            sendBtn.disabled = true;
-
-            appendMessage(text, "user");
-            const assistantMsgSpan = appendMessage("", "assistant");
-
-            try {
-                const messages = [
-                    { role: "system", content: "あなたは親切で丁寧なAIアシスタントです。自然な日本語で回答してください。" },
-                    { role: "user", content: text }
-                ];
-
-                const replyStream = await engine.chat.completions.create({
-                    messages: messages,
-                    stream: true,
-                });
-
-                let fullReply = "";
-                for await (const chunk of replyStream) {
-                    const delta = chunk.choices[0]?.delta?.content || "";
-                    fullReply += delta;
-                    assistantMsgSpan.innerText = fullReply;
-                    chatContainer.scrollTop = chatContainer.scrollHeight;
-                }
-            } catch (error) {
-                assistantMsgSpan.innerText = "エラーが発生しました。";
-                console.error(error);
-            } finally {
-                userInput.disabled = false;
-                sendBtn.disabled = false;
-                userInput.focus();
-            }
-        };
-
-        function appendMessage(text, sender) {
-            const msgDiv = document.createElement("div");
-            msgDiv.className = `message ${sender}`;
-            const span = document.createElement("span");
-            span.innerText = text;
-            msgDiv.appendChild(span);
-            chatContainer.appendChild(msgDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-            return span;
-        }
-
-        userInput.addEventListener("keypress", (e) => {
-            if (e.key === "Enter" && !sendBtn.disabled) {
-                sendMessage();
-            }
-        });
-    </script>
-</body>
-</html>
-```[cite: 1]
+                arSection.
