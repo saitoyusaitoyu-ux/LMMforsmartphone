@@ -52,7 +52,7 @@
             color: white;
         }
 
-        /* 各セクションの表示・非表示切り替え用コンテナ */
+        /* 各セクションの共通スタイル */
         .app-section {
             position: absolute;
             top: 0;
@@ -60,25 +60,27 @@
             width: 100%;
             height: 100%;
             display: none;
+            box-sizing: border-box;
         }
 
         .app-section.active {
             display: block;
         }
 
-        /* ARモード時の背景透過設定 */
+        /* ARモード時は背景を透明にしてカメラ映像を映す */
         #ar-section {
             background-color: transparent;
+            z-index: 1;
         }
 
-        /* チャットモード時のUIスタイル */
+        /* AIチャットモード時のスタイル */
         #chat-section {
             background-color: #f7f7f8;
             color: #333;
             padding: 70px 16px 16px 16px;
-            box-sizing: border-box;
             display: none;
             flex-direction: column;
+            z-index: 2;
         }
 
         #chat-section.active {
@@ -161,7 +163,7 @@
         <button id="btn-chat" class="mode-btn" onclick="switchMode('chat')">🤖 AIチャット</button>
     </div>
 
-    <!-- 1. ARモードセクション（カメラ背景＋QRコード認識＋垂直モデル表示） -->
+    <!-- 1. ARモードセクション -->
     <div id="ar-section" class="app-section active">
         <a-scene 
             mindar-image="imageTargetSrc: ./targets.mind;" 
@@ -177,7 +179,7 @@
 
             <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-            <!-- QRコード（ターゲット0番）認識時に出現するコンテナ -->
+            <!-- QRコード（ターゲット0番）認識時に出現するエンティティ -->
             <a-entity mindar-image-target="targetIndex: 0">
                 <!-- rotation="90 0 0" でQRコードに対して垂直に直立させる -->
                 <a-entity 
@@ -218,7 +220,7 @@
         const userInput = document.getElementById("user-input");
         const sendBtn = document.getElementById("send-btn");
 
-        // モード切り替え関数
+        // モード切り替え関数（グローバル定義）
         window.switchMode = function(mode) {
             const arSection = document.getElementById("ar-section");
             const chatSection = document.getElementById("chat-section");
@@ -231,4 +233,108 @@
                 btnAr.classList.add("active");
                 btnChat.classList.remove("active");
             } else {
-                arSection.
+                arSection.classList.remove("active");
+                chatSection.classList.add("active");
+                btnAr.classList.remove("active");
+                btnChat.classList.add("active");
+                
+                // チャットを開いた際にスクロールを一番下に維持
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+
+            // 画面レイアウトの崩れを防ぐためにリサイズイベントを通知
+            window.dispatchEvent(new Event('resize'));
+        };
+
+        // ユーザーの許可を得てからモデルのダウンロードと初期化を開始
+        window.startInitialization = async function() {
+            if (!confirm("AIモデル（数GB）のダウンロードとブラウザへのキャッシュ保存を開始しますか？")) {
+                return;
+            }
+
+            const initBtn = document.getElementById("init-btn");
+            if (initBtn) initBtn.style.display = "none";
+
+            statusDiv.innerText = "システムを初期化中...";
+
+            try {
+                const initProgressCallback = (progress) => {
+                    statusDiv.innerText = progress.text;
+                };
+
+                engine = await webllm.CreateMLCEngine(
+                    selectedModel,
+                    { initProgressCallback: initProgressCallback }
+                );
+
+                statusDiv.innerText = "⚡ 準備完了！AIとチャットできます（キャッシュ済）";
+                statusDiv.style.backgroundColor = "#e1f5fe";
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+            } catch (error) {
+                statusDiv.innerText = "エラー: WebGPUが未対応か、メモリ不足の可能性があります。";
+                statusDiv.style.backgroundColor = "#ffebee";
+                console.error(error);
+            }
+        };
+
+        // メッセージ送信・ストリーミング処理
+        window.sendMessage = async function() {
+            const text = userInput.value.trim();
+            if (!text || !engine) return;
+
+            userInput.value = "";
+            userInput.disabled = true;
+            sendBtn.disabled = true;
+
+            appendMessage(text, "user");
+            const assistantMsgSpan = appendMessage("", "assistant");
+
+            try {
+                const messages = [
+                    { role: "system", content: "あなたは親切で丁寧なAIアシスタントです。自然な日本語で回答してください。" },
+                    { role: "user", content: text }
+                ];
+
+                const replyStream = await engine.chat.completions.create({
+                    messages: messages,
+                    stream: true,
+                });
+
+                let fullReply = "";
+                for await (const chunk of replyStream) {
+                    const delta = chunk.choices[0]?.delta?.content || "";
+                    fullReply += delta;
+                    assistantMsgSpan.innerText = fullReply;
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+            } catch (error) {
+                assistantMsgSpan.innerText = "エラーが発生しました。";
+                console.error(error);
+            } finally {
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+                userInput.focus();
+            }
+        };
+
+        function appendMessage(text, sender) {
+            const msgDiv = document.createElement("div");
+            msgDiv.className = `message ${sender}`;
+            const span = document.createElement("span");
+            span.innerText = text;
+            msgDiv.appendChild(span);
+            chatContainer.appendChild(msgDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return span;
+        }
+
+        userInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter" && !sendBtn.disabled) {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
+```[cite: 1, 2]
