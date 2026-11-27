@@ -2,44 +2,34 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WebAR VRM Viewer</title>
-    <!-- A-Frame -->
+    <title>WebAR GLB Viewer</title>
+    <!-- A-Frame のみでOK（VRMローダーは不要） -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <!-- MindAR for A-Frame -->
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
-    <!-- 3Dモデルのアニメーション制御などに必要なライブラリ -->
-    <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
-    <!-- VRMモデルをロードするためのローダー（community製） -->
-    <script src="https://cdn.jsdelivr.net/npm/aframe-vrm-loader@1.0.0/dist/aframe-vrm-loader.js"></script>
   </head>
   <body style="margin: 0; overflow: hidden;">
+    
     <a-scene 
-      mindar-image="imageTargetSrc: ./targets.mind;" 
-      color-space="sRGB" 
-      renderer="colorManagement: true, physicallyCorrectLights" 
-      vr-mode-ui="enabled: false" 
-      device-orientation-permission-ui="enabled: false">
+      embedded 
+      renderer="colorManagement: true, physicallyCorrectLights"
+      vr-mode-ui="enabled: false">
       
       <a-assets>
-        <!-- .vrmファイルを読み込む指定 -->
-        <a-asset-item id="vrmModel" src="./model.vrm"></a-asset-item>
+        <a-asset-item id="modelFile" src="./model.glb"></a-asset-item>
       </a-assets>
 
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+      <a-camera position="0 1.6 0" look-controls="enabled: false"></a-camera>
 
-      <!-- ターゲット（マーカー）を認識したとき -->
-      <a-entity mindar-image-target="targetIndex: 0">
-        
-        <!-- VRMモデルの配置、回転、アニメーションの指定 -->
-        <a-entity 
-          vrm-model="src: #vrmModel;" 
-          position="0 -0.5 0" 
-          rotation="0 0 0" 
-          scale="1 1 1"
-          animation="property: rotation; to: 0 360 0; loop: true; dur: 10000; easing: linear;">
-        </a-entity>
-
+      <!-- 標準の gltf-model タグを使用 -->
+      <a-entity 
+        gltf-model="#modelFile" 
+        position="0 0 -1.5" 
+        rotation="0 0 0" 
+        scale="1 1 1">
       </a-entity>
+
+      <a-light type="ambient" color="#ffffff" intensity="1.0"></a-light>
+      <a-light type="directional" position="1 2 1" intensity="0.5"></a-light>
+
     </a-scene>
   </body>
 </html>
