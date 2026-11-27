@@ -2,8 +2,8 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WebAR GLB Viewer</title>
-    <!-- A-Frame のみでOK（VRMローダーは不要） -->
+    <title>WebAR Viewer</title>
+    <!-- A-Frame の読み込み -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   </head>
   <body style="margin: 0; overflow: hidden;">
@@ -14,12 +14,14 @@
       vr-mode-ui="enabled: false">
       
       <a-assets>
+        <!-- ※あらかじめBlender等で変換した model.glb を同じ階層に置いてください -->
         <a-asset-item id="modelFile" src="./model.glb"></a-asset-item>
       </a-assets>
 
+      <!-- カメラ -->
       <a-camera position="0 1.6 0" look-controls="enabled: false"></a-camera>
 
-      <!-- 標準の gltf-model タグを使用 -->
+      <!-- 3Dモデルの配置 -->
       <a-entity 
         gltf-model="#modelFile" 
         position="0 0 -1.5" 
@@ -27,9 +29,11 @@
         scale="1 1 1">
       </a-entity>
 
+      <!-- ライト -->
       <a-light type="ambient" color="#ffffff" intensity="1.0"></a-light>
       <a-light type="directional" position="1 2 1" intensity="0.5"></a-light>
 
     </a-scene>
+
   </body>
 </html>
